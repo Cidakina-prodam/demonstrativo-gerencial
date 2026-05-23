@@ -139,12 +139,6 @@ POSICIONAL_ABR2026 = {
                                 {"gdp":"180770","gds":"28067","titulo":"Desenvolvimento do MEU ESPORTE SP","horas":45.0,"atividades":["411041","412316"]},
                             ],
                         },
-                        {
-                            "cod":"SS0405","nome":"SIGA SEME-SUPERV.ATIVIDADES ESPORTIVAS REC.E LAZER",
-                            "demandas": [
-                                {"gdp":"180770","gds":"28067","titulo":"Desenvolvimento do MEU ESPORTE SP","horas":45.0,"atividades":["411041","412316"]},
-                            ],
-                        },
                     ],
                 }],
             },
@@ -292,3 +286,4 @@ with tabs[2]:
             colab_df, lanc_df, fat_map,
             nucleo_sel, ini, fim, status_map, tem_pos,
         )
+
