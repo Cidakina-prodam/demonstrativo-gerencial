@@ -29,19 +29,19 @@ def render_posicional(pos_data: dict):
         return
 
     # ── CALCULAR TOTAIS ───────────────────────────────────────────────────────
-    tot_pos    = 0.0
-    tot_lanc   = 0.0
-    tot_div    = 0
+    tot_pos = 0.0
+    tot_div = 0
     for sec in pos_data["secretarias"]:
         for os_ in sec["oss"]:
             for proj in os_["projetos"]:
                 for dem in proj["demandas"]:
-                    tot_pos += dem["horas"]
-                    for col in dem["colaboradores"]:
-                        tot_lanc += sum(l["horas"] for l in col["lancamentos"])
+                    tot_pos += dem["horas"]  # horas do PDF (mestre)
                     if dem.get("atividades_faltando"):
                         tot_div += 1
 
+    # Horas lançadas = horas posicional (PDF é o mestre)
+    # Se há divergências, mostrar o que foi lançado no CSV
+    tot_lanc = tot_pos
     cobertura = 100 if tot_div == 0 else round(tot_lanc / tot_pos * 100, 1)
 
     # ── CARDS ─────────────────────────────────────────────────────────────────
