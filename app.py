@@ -252,39 +252,42 @@ if pdf_files:
                 st.error(f"❌ Erro no PDF: {e}")
 
 # ── ASSOCIAR PDF A NÚCLEO ─────────────────────────────────────────────────────
-# Mapa OS → núcleo
-OS_NUCLEO_MAP = {
-    "GDS-1 - Operação Assistida":    "NSS1",
-    "NSS-1 - Manutenção e Melhorias":"NSS1",
-    "NSS-2 - Manutenção e Melhorias":"NSS2",
-    "NSS-3 - Manutenção e Melhorias":"NSS3",
+# Mapa cliente (cabeçalho do PDF) → núcleo
+# Chave: trecho do nome do cliente (case-insensitive)
+CLIENTE_NUCLEO_MAP = {
+    "SMS":   "NSS1",
+    "SEME":  "NSS3",
+    "SMDET": "NSS3",
 }
+
+def _nucleo_do_cliente(cliente_str: str) -> str:
+    """Detecta o núcleo pelo nome do cliente extraído do cabeçalho do PDF."""
+    upper = cliente_str.upper()
+    for chave, nucleo in CLIENTE_NUCLEO_MAP.items():
+        if chave in upper:
+            return nucleo
+    return "NSS1"  # fallback
 
 # Agrupar demandas por núcleo a partir dos PDFs
 pos_por_nucleo = defaultdict(lambda: {"secretarias": []})
 
 for parsed in posicionais_raw:
+    # Núcleo determinado pelo cliente do PDF (uma vez por PDF)
+    nucleo = _nucleo_do_cliente(parsed.get("cliente", ""))
+
     for sec_raw in parsed["secretarias"]:
+        # Encontrar secretaria existente ou criar nova dentro do núcleo
+        sec_desc = sec_raw["desc"]
+        sec_existente = next(
+            (s for s in pos_por_nucleo[nucleo]["secretarias"]
+             if s["desc"] == sec_desc),
+            None
+        )
+        if sec_existente is None:
+            sec_existente = {"desc": sec_desc, "horas": sec_raw["horas"], "oss": []}
+            pos_por_nucleo[nucleo]["secretarias"].append(sec_existente)
+
         for os_raw in sec_raw["oss"]:
-            # Descobrir núcleo pela descrição da OS
-            nucleo = "NSS1"  # default
-            for key, nuc in OS_NUCLEO_MAP.items():
-                if key in os_raw["desc"]:
-                    nucleo = nuc
-                    break
-
-            # Agrupar por secretaria dentro do núcleo
-            # Encontrar secretaria existente ou criar nova
-            sec_desc = sec_raw["desc"]
-            sec_existente = next(
-                (s for s in pos_por_nucleo[nucleo]["secretarias"]
-                 if s["desc"] == sec_desc),
-                None
-            )
-            if sec_existente is None:
-                sec_existente = {"desc": sec_desc, "horas": sec_raw["horas"], "oss": []}
-                pos_por_nucleo[nucleo]["secretarias"].append(sec_existente)
-
             sec_existente["oss"].append(os_raw)
 
 # Processar posicional por núcleo
