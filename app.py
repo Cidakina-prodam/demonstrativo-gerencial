@@ -1,6 +1,5 @@
 """
-app_gerador.py — Gerador de Demonstrativo Gerencial
-Você sobe os arquivos → clica Gerar → baixa o HTML pronto.
+app.py — Gerador de Demonstrativo Gerencial
 """
 
 import streamlit as st
@@ -22,166 +21,7 @@ from processamento import (
     fmt_h,
     STATUS_CORES,
 )
-
-"""
-pdf_parser.py
-Extrai a estrutura do posicional diretamente de PDFs.
-Requer: pdfplumber
-"""
-
-import re
-import pdfplumber
-
-
-def parse_posicional_pdf(pdf_file) -> dict:
-    """
-    Extrai estrutura do posicional de um arquivo PDF.
-    pdf_file: path (str) ou file-like object
-    Retorna dict com cliente, contrato, periodo, secretarias/oss/projetos/demandas/atividades
-    """
-    with pdfplumber.open(pdf_file) as pdf:
-        linhas = []
-        for page in pdf.pages:
-            texto = page.extract_text()
-            if texto:
-                for linha in texto.split("\n"):
-                    l = linha.strip()
-                    if l:
-                        linhas.append(l)
-
-    # ── Cabeçalho ────────────────────────────────────────────────────────────
-    cliente = contrato = periodo_ref = data_ini = data_fim = ""
-    for l in linhas[:40]:
-        if l.startswith("Cliente:"):
-            cliente = l.replace("Cliente:", "").strip()
-        if l.startswith("Contrato:"):
-            contrato = l.replace("Contrato:", "").strip()
-        m = re.search(r"Período do Referência:\s*(\S+)", l)
-        if m:
-            periodo_ref = m.group(1)
-        m = re.search(r"De:\s*([\d/]+)\s*Até:\s*([\d/]+)", l)
-        if m:
-            data_ini, data_fim = m.group(1), m.group(2)
-
-    resultado = {
-        "cliente":     cliente,
-        "contrato":    contrato,
-        "periodo_ref": periodo_ref,
-        "data_ini":    data_ini,
-        "data_fim":    data_fim,
-        "secretarias": [{
-            "desc":  f"{cliente} — {contrato}",
-            "horas": 0,
-            "oss":   [],
-        }],
-    }
-    sec = resultado["secretarias"][0]
-    os_cur = proj_cur = dem_cur = None
-
-    # ── Padrões ───────────────────────────────────────────────────────────────
-    RE_OS      = re.compile(r'^O\.S\.\s+(.+)$')
-    RE_TOTAL_H = re.compile(r'^Total Horas:\s*([\d.,]+)$')
-    RE_PROJ    = re.compile(r'^(SH\d+|SS\d+|PS\d+|SJ\d+|SV\d+|SB\d+|SU\d+)\s+(.+?)\s+([\d.,]+)$')
-    RE_DEM     = re.compile(r'^(\d{6})\s*-\s*(.+?)\s+(\d{5,6})\s+([\d.,]+)$')
-    RE_ATIV    = re.compile(r'^(\d{6})\s+.+')
-    RE_SKIP    = re.compile(
-        r'^\d+/\d+/\d+.*\d+/\d+$'
-        r'|^Total\s+[\d.,]+'
-        r'|^Qtdes\.'
-        r'|^dez/|^jan/|^fev/|^mar/|^abr/|^mai/|^jun/'
-        r'|^jul/|^ago/|^set/|^out/|^nov/'
-        r'|^Código\s+Projeto'
-        r'|^RELATÓRIO'
-        r'|^Cliente:|^Contrato:|^Ordem|^Data Iníc|^Data Fim'
-        r'|^Tipo Serv|^Período|^De:'
-    )
-
-    # ── Parse linha a linha ───────────────────────────────────────────────────
-    i = 0
-    while i < len(linhas):
-        linha = linhas[i]
-
-        if RE_SKIP.match(linha) or linha == "Atividades":
-            i += 1
-            continue
-
-        # OS
-        m = RE_OS.match(linha)
-        if m:
-            os_cur  = {"desc": m.group(1).strip(), "horas": 0, "projetos": []}
-            proj_cur = dem_cur = None
-            sec["oss"].append(os_cur)
-            i += 1
-            continue
-
-        # Total Horas
-        m = RE_TOTAL_H.match(linha)
-        if m and os_cur:
-            os_cur["horas"] = float(m.group(1).replace(",", "."))
-            i += 1
-            continue
-
-        # Projeto
-        m = RE_PROJ.match(linha)
-        if m and os_cur:
-            proj_cur = {
-                "cod":      m.group(1),
-                "nome":     m.group(2).strip(),
-                "horas":    float(m.group(3).replace(",", ".")),
-                "demandas": [],
-            }
-            os_cur["projetos"].append(proj_cur)
-            dem_cur = None
-            i += 1
-            continue
-
-        # Demanda
-        m = RE_DEM.match(linha)
-        if m and proj_cur:
-            # Título pode quebrar em linhas seguintes
-            titulo = m.group(2).strip()
-            j = i + 1
-            while j < len(linhas):
-                prox = linhas[j]
-                if (not RE_DEM.match(prox) and not RE_OS.match(prox) and
-                        not RE_PROJ.match(prox) and not RE_TOTAL_H.match(prox) and
-                        not RE_ATIV.match(prox) and prox != "Atividades" and
-                        not RE_SKIP.match(prox)):
-                    titulo += " " + prox
-                    j += 1
-                else:
-                    break
-            dem_cur = {
-                "gdp":        m.group(1),
-                "gds":        m.group(3),
-                "titulo":     titulo,
-                "horas":      float(m.group(4).replace(",", ".")),
-                "atividades": [],
-            }
-            proj_cur["demandas"].append(dem_cur)
-            i = j
-            continue
-
-        # Atividade
-        m = RE_ATIV.match(linha)
-        if m and dem_cur:
-            dem_cur["atividades"].append(m.group(1))
-            i += 1
-            continue
-
-        i += 1
-
-    sec["horas"] = sum(os_["horas"] for os_ in sec["oss"])
-    return resultado
-
-
-def estrutura_para_pos_format(parsed: dict) -> dict:
-    """
-    Converte o resultado do parser para o formato usado pelo processamento.py:
-    {"secretarias": [{desc, horas, oss: [{desc, projetos: [{cod, nome, demandas: [{gdp, gds, titulo, horas, atividades}]}]}]}]}
-    """
-    return {"secretarias": parsed["secretarias"]}
-
+from pdf_parser import parse_posicional_pdf
 
 # ── CONFIGURAÇÃO ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -192,6 +32,61 @@ st.set_page_config(
 
 st.title("📊 Gerador de Demonstrativo Gerencial")
 st.caption("Suba os arquivos do mês → clique Gerar → baixe o HTML")
+
+# ── EXTRAIR DADOS HISTÓRICOS DO HTML ANTERIOR ─────────────────────────────────
+import re as _re
+
+def extrair_dados_html(html_file) -> dict:
+    try:
+        texto = html_file.read().decode("utf-8")
+    except Exception:
+        return {}
+
+    def _extrair_var(nome, txt):
+        pat = "var " + nome + r"=(.+?);\n"
+        m = _re.search(pat, txt)
+        if m:
+            try:
+                return json.loads(m.group(1))
+            except Exception:
+                return None
+        return None
+
+    return {
+        "pos":    _extrair_var("POS",        texto) or {},
+        "lanc":   _extrair_var("LANC",       texto) or {},
+        "cruz":   _extrair_var("CRUZ",       texto) or [],
+        "status": _extrair_var("STATUS_MAP", texto) or {},
+    }
+
+# ── MAPEAMENTO CLIENTE+CONTRATO → NÚCLEO ──────────────────────────────────────
+REGRAS_NUCLEO = [
+    # NSS2 — dois contratos HSPM distintos
+    ("HSPM", "TC 094",  "NSS2"),
+    ("HSPM", "TC273",   "NSS2"),
+    ("HSPM", "TC 273",  "NSS2"),
+    # NSS1
+    ("SMS",  "",        "NSS1"),
+    # NSS3
+    ("SEME", "",        "NSS3"),
+    ("SMDET","",        "NSS3"),
+    # NC
+    ("SMADS","",        "NC"),
+    ("SMDHC","",        "NC"),
+    ("SMC",  "",        "NC"),
+    ("SPCINE","",       "NC"),
+    ("FTM",  "",        "NC"),
+    ("SMPED","",        "NC"),
+]
+
+def _nucleo_do_parsed(parsed: dict) -> str:
+    cliente  = (parsed.get("cliente")  or "").upper()
+    contrato = (parsed.get("contrato") or "").upper()
+    for trecho_cli, trecho_cont, nucleo in REGRAS_NUCLEO:
+        if trecho_cli.upper() in cliente:
+            if not trecho_cont or trecho_cont.upper() in contrato:
+                return nucleo
+    return "NSS1"  # fallback
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -205,6 +100,30 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("## 📂 Arquivos")
+
+    html_anterior = st.file_uploader(
+        "📄 HTML anterior (opcional — acumula histórico)",
+        type=["html"],
+        help="Suba o HTML do mês anterior para manter histórico acumulado"
+    )
+
+    # Gerenciamento de meses históricos
+    meses_remover = []
+    if html_anterior:
+        html_anterior.seek(0)
+        _dados_prev = extrair_dados_html(html_anterior)
+        html_anterior.seek(0)
+        _cruz_prev = _dados_prev.get("cruz") or []
+        _labels_prev = [m.get("label","") for m in _cruz_prev if m.get("label")]
+        if _labels_prev:
+            st.markdown("**📅 Meses no arquivo anterior:**")
+            meses_remover = st.multiselect(
+                "Remover meses (opcional):",
+                options=_labels_prev,
+                help="Selecione meses para remover do histórico antes de gerar"
+            )
+            if meses_remover:
+                st.warning(f"⚠️ {len(meses_remover)} mês(es) será(ão) removido(s): {', '.join(meses_remover)}")
 
     csv_files   = st.file_uploader("CSV de Lançamentos", type=["csv"],
                                     accept_multiple_files=True)
@@ -226,65 +145,49 @@ if not csv_files or not colab_file:
     )
     st.stop()
 
-# ── CARREGAR DADOS ─────────────────────────────────────────────────────────────
+# ── CARREGAR DADOS ────────────────────────────────────────────────────────────
 with st.spinner("Carregando dados..."):
-    lanc_df   = carregar_csv(csv_files)
-    colab_df  = carregar_colaboradores(colab_file)
-    status_map= carregar_status(status_file) if status_file else {}
+    lanc_df    = carregar_csv(csv_files)
+    colab_df   = carregar_colaboradores(colab_file)
+    status_map = carregar_status(status_file) if status_file else {}
 
 # ── PARSEAR PDFs ──────────────────────────────────────────────────────────────
-posicionais_raw = []   # lista de dicts parsed
+posicionais_raw = []
 if pdf_files:
     st.markdown("### 📄 PDFs detectados")
-    cols = st.columns(len(pdf_files))
+    cols = st.columns(min(len(pdf_files), 4))
     for i, pdf_f in enumerate(pdf_files):
         try:
             parsed = parse_posicional_pdf(pdf_f)
             posicionais_raw.append(parsed)
-            with cols[i]:
+            with cols[i % len(cols)]:
+                nucleo_det = _nucleo_do_parsed(parsed)
                 st.success(
                     f"✅ **{parsed['cliente']}**\n\n"
                     f"{parsed['periodo_ref']} — "
-                    f"{parsed['secretarias'][0]['horas']:.2f}h"
+                    f"{parsed['secretarias'][0]['horas']:.2f}h\n\n"
+                    f"Núcleo: **{nucleo_det}**"
                 )
         except Exception as e:
-            with cols[i]:
+            with cols[i % len(cols)]:
                 st.error(f"❌ Erro no PDF: {e}")
 
 # ── ASSOCIAR PDF A NÚCLEO ─────────────────────────────────────────────────────
-# Mapa OS → núcleo
-OS_NUCLEO_MAP = {
-    "GDS-1 - Operação Assistida":    "NSS1",
-    "NSS-1 - Manutenção e Melhorias":"NSS1",
-    "NSS-2 - Manutenção e Melhorias":"NSS2",
-    "NSS-3 - Manutenção e Melhorias":"NSS3",
-}
-
-# Agrupar demandas por núcleo a partir dos PDFs
 pos_por_nucleo = defaultdict(lambda: {"secretarias": []})
 
 for parsed in posicionais_raw:
+    nucleo = _nucleo_do_parsed(parsed)
     for sec_raw in parsed["secretarias"]:
+        sec_desc = sec_raw["desc"]
+        sec_existente = next(
+            (s for s in pos_por_nucleo[nucleo]["secretarias"]
+             if s["desc"] == sec_desc),
+            None
+        )
+        if sec_existente is None:
+            sec_existente = {"desc": sec_desc, "horas": sec_raw["horas"], "oss": []}
+            pos_por_nucleo[nucleo]["secretarias"].append(sec_existente)
         for os_raw in sec_raw["oss"]:
-            # Descobrir núcleo pela descrição da OS
-            nucleo = "NSS1"  # default
-            for key, nuc in OS_NUCLEO_MAP.items():
-                if key in os_raw["desc"]:
-                    nucleo = nuc
-                    break
-
-            # Agrupar por secretaria dentro do núcleo
-            # Encontrar secretaria existente ou criar nova
-            sec_desc = sec_raw["desc"]
-            sec_existente = next(
-                (s for s in pos_por_nucleo[nucleo]["secretarias"]
-                 if s["desc"] == sec_desc),
-                None
-            )
-            if sec_existente is None:
-                sec_existente = {"desc": sec_desc, "horas": sec_raw["horas"], "oss": []}
-                pos_por_nucleo[nucleo]["secretarias"].append(sec_existente)
-
             sec_existente["oss"].append(os_raw)
 
 # Processar posicional por núcleo
@@ -323,7 +226,6 @@ if not gerar:
 # ── GERAR HTML ────────────────────────────────────────────────────────────────
 with st.spinner("Gerando HTML..."):
 
-    # Montar LANC por núcleo
     AUSENCIAS = [
         "FÉRIAS","LICENÇA","FALTAS E ATRASOS",
         "Ausência Compensável em Banco de Horas",
@@ -338,7 +240,6 @@ with st.spinner("Gerando HTML..."):
 
     NUCLEOS = ["NSS1","NSS2","NSS3","NC"]
     lanc_por_nucleo = {}
-    CAT_MAP = {"Faturável":"fat","Não faturável":"nfat","Interno PRODAM":"int"}
 
     for nucleo in NUCLEOS:
         cn = colab_df[colab_df["Núcleo"] == nucleo]
@@ -367,27 +268,28 @@ with st.spinner("Gerando HTML..."):
                             ativs = []
                             for _, ar in lgds.iterrows():
                                 ativs.append({
-                                    "id": san(ar.get("atividade","")),
-                                    "titulo": san(ar.get("titulo_atividade","")),
-                                    "tipo": san(ar.get("tipo_demanda","")),
-                                    "data": ar["data_dt"].strftime("%d/%m") if pd.notna(ar["data_dt"]) else "",
+                                    "id":    san(ar.get("atividade","")),
+                                    "titulo":san(ar.get("titulo_atividade","")),
+                                    "tipo":  san(ar.get("tipo_demanda","")),
+                                    "data":  ar["data_dt"].strftime("%d/%m") if pd.notna(ar["data_dt"]) else "",
                                     "horas": round(ar["horas_num"],2),
                                 })
                             gdps.append({
-                                "gdp": san(lgds["gdp_csv"].iloc[0]),
-                                "gds": san(str(gds_v)),
-                                "tipo": san(lgds["tipo_demanda"].iloc[0]) if "tipo_demanda" in lgds.columns else "",
-                                "horas": round(lgds["horas_num"].sum(),2),
+                                "gdp":      san(lgds["gdp_csv"].iloc[0]),
+                                "gds":      san(str(gds_v)),
+                                "tipo":     san(lgds["tipo_demanda"].iloc[0]) if "tipo_demanda" in lgds.columns else "",
+                                "horas":    round(lgds["horas_num"].sum(),2),
                                 "atividades": ativs,
                             })
                         projs.append({"nome": san(str(pn)), "cliente": san(lp["cliente"].iloc[0]), "gdps": gdps})
                     cats.append({"nome": categ, "key": key, "horas": round(lcat["horas_num"].sum(),2), "projetos": projs})
                 colabs.append({
-                    "nome": san(cr["Nome"]).title(),
-                    "rf": san(cr["RF"]),
-                    "especializacao": san(str(cr.get("Especialização",""))),
-                    "horas": round(lc["horas_num"].sum(),2),
-                    "categorias": cats,
+                    "nome":          san(cr["Nome"]).title(),
+                    "rf":            san(cr["RF"]),
+                    "rf_norm":       rf,
+                    "especializacao":san(str(cr.get("Especialização",""))),
+                    "horas":         round(lc["horas_num"].sum(),2),
+                    "categorias":    cats,
                 })
             grupos.append({"tipo": tipo_lbl, "colaboradores": colabs})
         lanc_por_nucleo[nucleo] = {"nome": nucleo, "grupos": grupos}
@@ -407,10 +309,10 @@ with st.spinner("Gerando HTML..."):
                                 atv = l.get("atividade","")
                                 if atv:
                                     ativ_faturada[atv] = {
-                                        "gds": gds,
-                                        "gdp": dem.get("gdp_real",""),
+                                        "gds":    gds,
+                                        "gdp":    dem.get("gdp_real",""),
                                         "status": dem.get("status",""),
-                                        "cor": dem.get("status_cor","#888"),
+                                        "cor":    dem.get("status_cor","#888"),
                                     }
 
     fat_per = periodo[(~periodo["eh_prodam"]) & (~periodo["eh_ausencia"])]
@@ -422,11 +324,11 @@ with st.spinner("Gerando HTML..."):
         for pn, lp in lc.groupby("nome_projeto", sort=False):
             gdp_map = {}
             for _, row in lp.iterrows():
-                atv     = row["atividade"]
-                gds_v   = row["gds_csv"]
-                gdp_v   = row["gdp_csv"]
-                horas   = row["horas_num"]
-                tipo    = san(str(row.get("tipo_demanda","") or ""))
+                atv   = row["atividade"]
+                gds_v = row["gds_csv"]
+                gdp_v = row["gdp_csv"]
+                horas = row["horas_num"]
+                tipo  = san(str(row.get("tipo_demanda","") or ""))
                 if atv in ativ_faturada:
                     fi = ativ_faturada[atv]
                     faturado = True
@@ -435,7 +337,7 @@ with st.spinner("Gerando HTML..."):
                 else:
                     faturado = gds_v in gds_faturados
                     gds_r, gdp_r = gds_v, gdp_v
-                    hit = (status_map or {}).get(gds_v, (status_map or {}).get(gdp_v, {}))
+                    hit    = (status_map or {}).get(gds_v, (status_map or {}).get(gdp_v, {}))
                     status = hit.get("status","") if isinstance(hit,dict) else ""
                     cor    = STATUS_CORES.get(status,"#888")
                 chave = gds_r or gdp_r or atv
@@ -471,7 +373,8 @@ with st.spinner("Gerando HTML..."):
             colab_list.append({
                 "nome":nome,"rf":san(cr["RF"]),"tipo":tipo,"espec":espec,
                 "lancado":hlanc,"faturado":hfat,"nao_faturado":hnfat,
-                "pct_fat":pct,"tem_pos":bool(pos_processado),"externo":tipo!="Prodam","drill":drill
+                "pct_fat":pct,"tem_pos":bool(pos_processado),"externo":tipo!="Prodam","drill":drill,
+                "pct_contrib":0,
             })
         colab_list.sort(key=lambda x: (0 if x["tipo"]=="Prodam" else 1, x["tipo"], x["nome"]))
         tot_lanc = round(sum(c["lancado"] for c in colab_list), 2)
@@ -486,42 +389,58 @@ with st.spinner("Gerando HTML..."):
 
     CRUZ = [cruzamento_mes]
 
-    # ── Serializar dados para injetar no HTML template ─────────────────────
+    # ── Mesclar com histórico do HTML anterior ────────────────────────────────
+    dados_hist = {}
+    if html_anterior:
+        html_anterior.seek(0)
+        dados_hist = extrair_dados_html(html_anterior)
+
+    pos_json_dict = {k.lower(): v for k, v in pos_processado.items()}
+    pos_final = dict(dados_hist.get("pos") or {})
+    pos_final.update(pos_json_dict)
+
+    lanc_final = dict(dados_hist.get("lanc") or {})
+    lanc_final.update(lanc_por_nucleo)
+
+    cruz_hist = list(dados_hist.get("cruz") or [])
+    meses_excluir = set(meses_remover) | {mes_ref}
+    cruz_filtrado = [m for m in cruz_hist if m.get("label") not in meses_excluir]
+    cruz_final = cruz_filtrado + CRUZ
+
+    status_final = dict(dados_hist.get("status") or {})
+    if status_map:
+        status_final.update(status_map)
+
+    # ── Serializar ────────────────────────────────────────────────────────────
     COLORS = ["#2E75B6","#FFD966","#70AD47","#FF6B6B","#9B59B6","#E07B39","#1ABC9C",
               "#E74C3C","#3498DB","#F39C12","#27AE60","#8E44AD","#16A085","#D35400","#2980B9"]
 
-    # Converter pos_processado para formato POS (dict por núcleo)
-    pos_json_dict = {k.lower(): v for k, v in pos_processado.items()}
-
     dados_js = (
-        "var POS="     + json.dumps(pos_json_dict,    ensure_ascii=True).replace("'","'") + ";\n"
-        "var LANC="    + json.dumps(lanc_por_nucleo,  ensure_ascii=True) + ";\n"
-        "var CRUZ="    + json.dumps(CRUZ,              ensure_ascii=True) + ";\n"
-        "var CORES="   + json.dumps(COLORS) + ";\n"
-        "var STATUS_MAP=" + json.dumps(status_map,    ensure_ascii=True) + ";\n"
+        "var POS="        + json.dumps(pos_final,     ensure_ascii=True) + ";\n"
+        "var LANC="       + json.dumps(lanc_final,    ensure_ascii=True) + ";\n"
+        "var CRUZ="       + json.dumps(cruz_final,    ensure_ascii=True) + ";\n"
+        "var CORES="      + json.dumps(COLORS)                           + ";\n"
+        "var STATUS_MAP=" + json.dumps(status_final,  ensure_ascii=True) + ";\n"
     )
 
-    # ── Ler template HTML e injetar dados ─────────────────────────────────
+    # ── Ler template e injetar dados ──────────────────────────────────────────
     template_path = Path(__file__).parent / "template.html"
     if not template_path.exists():
-        st.error("❌ Arquivo template.html não encontrado! Coloque o HTML base na pasta do app.")
+        st.error("❌ Arquivo template.html não encontrado!")
         st.stop()
 
     with open(template_path, encoding="utf-8") as f:
         html_template = f.read()
 
-    # Substituir bloco de dados
     marker_start = "var POS="
     marker_end   = "var BADGES="
     if marker_start not in html_template or marker_end not in html_template:
-        st.error("❌ Template HTML não tem os marcadores esperados (var POS= e var BADGES=).")
+        st.error("❌ Template HTML não tem os marcadores esperados.")
         st.stop()
 
     idx_s = html_template.index(marker_start)
     idx_e = html_template.index(marker_end)
     html_final = html_template[:idx_s] + dados_js + html_template[idx_e:]
-
-    # Atualizar título com mês e período
     html_final = html_final.replace(
         "<title>Demonstrativo Gerencial</title>",
         f"<title>Demonstrativo Gerencial — {mes_ref}</title>"
@@ -532,19 +451,11 @@ nome_arquivo = f"Demonstrativo_{mes_ref.replace(' ','_')}.html"
 html_bytes   = html_final.encode("utf-8")
 
 st.success(f"✅ HTML gerado! **{len(html_bytes)/1024:.0f} KB**")
-
 st.download_button(
-    label    = f"⬇️ Baixar {nome_arquivo}",
-    data     = html_bytes,
-    file_name= nome_arquivo,
-    mime     = "text/html",
-    type     = "primary",
+    label           = f"⬇️ Baixar {nome_arquivo}",
+    data            = html_bytes,
+    file_name       = nome_arquivo,
+    mime            = "text/html",
+    type            = "primary",
     use_container_width=True,
-)
-
-st.info(
-    "💡 **Como usar o HTML:**\n\n"
-    "1. Clique em Baixar\n"
-    "2. Abra o arquivo no navegador (Chrome, Edge, Firefox)\n"
-    "3. Todas as 3 abas funcionam offline — não precisa de internet"
 )
