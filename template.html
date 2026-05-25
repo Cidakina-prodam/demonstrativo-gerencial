@@ -553,16 +553,16 @@ function bColPos(c,dem_div,dem_horas){
 function bDem(d){
   var id="dm"+uid();var w=mk("div","dem-block");w.id=id;
   var temFalta=d.atividades_faltando&&d.atividades_faltando.length>0;
-  var h=mk("div","dem-hdr"+(temFalta?" div-flag":""));h.onclick=function(){tog(id);};
+  var semLanc=(!d.colaboradores||d.colaboradores.length===0)&&(d.horas||0)>0;
+  var divFlag=temFalta||semLanc;
+  var h=mk("div","dem-hdr"+(divFlag?" div-flag":""));h.onclick=function(){tog(id);};
   h.appendChild(mk("span","dem-desc",d.desc));
   if(d.status){var sb=mk("span");sb.textContent=d.status;sb.style.cssText="font-size:.6rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap;color:#fff;margin-left:6px;background:"+(d.status_cor||"#888");h.appendChild(sb);}
-  if(d.atividades_faltando&&d.atividades_faltando.length>0){var fb=mk("span","div-badge","\u26A0 "+d.atividades_faltando.length+" faltando");h.appendChild(fb);}
-  // badge de divergência removido — usamos só atividades_faltando
+  if(temFalta){var fb=mk("span","div-badge","\u26A0 "+d.atividades_faltando.length+" faltando");h.appendChild(fb);}
+  if(semLanc){var nb=mk("span","div-badge","\u26A0 Sem lan\u00E7amentos no CSV");h.appendChild(nb);}
   h.appendChild(mk("span","dem-horas",fmtH(d.horas)));h.appendChild(mk("span","dem-chv","\u25BC"));
   var b=mk("div","dem-body");
-  // divergências do Excel removidas — só mostramos atividades faltando do PDF
-  // Mostrar atividades do PDF que não foram encontradas no Excel
-  if(d.atividades_faltando&&d.atividades_faltando.length>0){
+  if(temFalta){
     var faltaWrap=mk("div");
     var faltaTit=mk("div");faltaTit.style.cssText="font-size:.72rem;font-weight:700;color:#C00000;padding:4px 10px 2px;";
     faltaTit.textContent="\u274C Atividades no PDF sem lan\u00E7amento no CSV:";
@@ -575,8 +575,15 @@ function bDem(d){
     });
     b.appendChild(faltaWrap);
   }
-  d.colaboradores.forEach(function(c){b.appendChild(bColPos(c,d.div,d.horas));});
-  if(d.colaboradores.length===0){b.appendChild(mk("div","sl","Sem lan\u00E7amentos encontrados"));}
+  if(d.colaboradores&&d.colaboradores.length>0){
+    d.colaboradores.forEach(function(c){b.appendChild(bColPos(c,d.div,d.horas));});
+  } else {
+    var msg=semLanc
+      ?"\u26A0 "+fmtH(d.horas)+" no posicional sem lan\u00E7amentos no CSV — poss\u00EDvel diverg\u00EAncia de per\u00EDodo ou n\u00FAcleo."
+      :"Sem lan\u00E7amentos encontrados.";
+    var sl=mk("div","sl");sl.style.cssText=semLanc?"color:#C00000;font-weight:600;":"";sl.textContent=msg;
+    b.appendChild(sl);
+  }
   w.appendChild(h);w.appendChild(b);return w;
 }
 function bProj(p){
@@ -600,10 +607,10 @@ function calcTotPos(data){
     th+=s.horas||0;
     s.oss.forEach(function(os){os.projetos.forEach(function(p){p.demandas.forEach(function(d){
       if(d.atividades_faltando&&d.atividades_faltando.length>0)td++;
+      else if((!d.colaboradores||d.colaboradores.length===0)&&(d.horas||0)>0)td++;
     });});});
   });
-  // Horas lançadas = horas posicional (se cobertura 100%, sem divergências)
-  var tl=td===0?th:th; // sempre igual ao posicional pois validamos pelo CSV
+  var tl=td===0?th:th;
   return{horas:th,lancadas:tl,diverg:td};
 }
 function bViewPos(key,nid){
