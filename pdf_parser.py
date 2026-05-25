@@ -57,7 +57,7 @@ def parse_posicional_pdf(pdf_file) -> dict:
     RE_OS      = re.compile(r'^O\.S\.\s+(.+)$')
     RE_TOTAL_H = re.compile(r'^Total Horas:\s*([\d.,]+)$')
     # SH, SS, PS, SJ, SV = NSS1/NSS2/NSS3 | SB, SU = NC (SMADS, SMC, SMDHC, SMPED, SPCINE, FTM)
-    RE_PROJ    = re.compile(r'^(SH\d+|SS\d+|PS\d+|SJ\d+|SV\d+|SB\d+|SU\d+)\s+(.+?)\s+([\d.,]+)$')
+    RE_PROJ    = re.compile(r'^(SH\d+|SS\d+|PS\d+|SJ\d+|SV\d+|SB\d+|SU\d+|HM\d+)\s+(.+?)\s+([\d.,]+)$')
     RE_DEM     = re.compile(r'^(\d{6})\s*-\s*(.+?)\s+(\d{5,6})\s+([\d.,]+)$')
     RE_ATIV    = re.compile(r'^(\d{6})\s+.+')
     RE_SKIP    = re.compile(
