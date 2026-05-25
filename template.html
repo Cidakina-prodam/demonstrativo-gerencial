@@ -197,6 +197,26 @@ tr.cruz-tr-open td{background:var(--ap)}
 .ativ-faltando .af-id{font-family:'DM Mono',monospace;font-size:.7rem;color:#C00000;font-weight:700;min-width:70px;}
 .ativ-faltando .af-label{color:#C00000;font-weight:600;}
 
+
+/* ── OPERAÇÃO ASSISTIDA ─────────────────────────────────────── */
+.oa-card{background:var(--sf);border-radius:var(--rd);box-shadow:var(--sh);margin-bottom:8px;overflow:hidden;border:1.5px solid var(--bd)}
+.oa-hdr{display:flex;align-items:center;padding:11px 16px;background:var(--ac);cursor:pointer;gap:10px}.oa-hdr:hover{background:#aecde6}
+.oa-av{width:30px;height:30px;background:var(--ae);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:.72rem;font-weight:700;flex-shrink:0}
+.oa-nome{font-weight:700;font-size:.88rem;flex:1;color:var(--ae)}.oa-espec{font-size:.72rem;color:var(--tm);margin-right:8px}
+.oa-horas{font-family:'DM Mono',monospace;font-weight:600;font-size:.95rem;color:var(--ae)}
+.oa-chv{font-size:.65rem;color:var(--ae);transition:transform .2s;margin-left:6px}.oa-card.op .oa-chv{transform:rotate(180deg)}
+.oa-body{display:none;padding:8px 14px 12px}.oa-card.op .oa-body{display:block}
+.oa-proj-sep{font-size:.72rem;font-weight:700;color:var(--ae);background:var(--ap);padding:4px 10px;border-radius:6px;margin:8px 0 4px;display:inline-block}
+.oa-gdp-block{margin-bottom:6px;background:var(--ab);border-radius:6px;overflow:hidden}
+.oa-gdp-hdr{display:flex;align-items:center;padding:5px 10px;cursor:pointer;gap:8px;font-size:.78rem;background:var(--pb)}.oa-gdp-hdr:hover{background:#c5cfe8}
+.oa-gdp-label{flex:1;font-weight:600;color:var(--tx)}.oa-gdp-h{font-family:'DM Mono',monospace;font-size:.78rem;color:var(--tm)}
+.oa-gdp-chv{font-size:.6rem;color:var(--tm);transition:transform .2s}.oa-gdp-block.op .oa-gdp-chv{transform:rotate(180deg)}
+.oa-gdp-body{display:none;padding:4px 8px 8px}.oa-gdp-block.op .oa-gdp-body{display:block}
+.oa-atv-row{display:flex;align-items:center;padding:3px 8px;background:var(--sf);border-radius:4px;margin-bottom:2px;gap:8px;font-size:.74rem}
+.oa-atv-id{font-family:'DM Mono',monospace;font-size:.68rem;color:var(--am);min-width:65px;flex-shrink:0}
+.oa-atv-titulo{flex:1;color:var(--tx)}.oa-atv-data{color:var(--tm);min-width:44px;font-size:.7rem}
+.oa-atv-h{font-family:'DM Mono',monospace;font-size:.77rem;color:var(--tm);min-width:38px;text-align:right}
+
 </style>
 </head>
 <body>
@@ -699,6 +719,75 @@ function swM(idx){document.querySelectorAll(".mes-panel").forEach(function(p,i){
 function swView(nid,vi){document.querySelectorAll("#"+nid+" .view-panel").forEach(function(p,i){p.classList.toggle("on",i===vi);});document.querySelectorAll("#"+nid+" .view-tab").forEach(function(t,i){t.classList.toggle("on",i===vi);});}
 function swN(mid,ni){document.querySelectorAll("#"+mid+" .np").forEach(function(p,i){p.classList.toggle("on",i===ni);});document.querySelectorAll("#"+mid+" .ntab").forEach(function(t,i){t.classList.toggle("on",i===ni);});}
 // ── BUILD ─────────────────────────────────────────────────────────────────────
+
+// ── OPERAÇÃO ASSISTIDA ─────────────────────────────────────────────────────
+function bViewOA(nucleo_key, nid){
+  var frag=document.createDocumentFragment();
+  var dados=OA&&OA.nucleos?OA.nucleos[nucleo_key]:null;
+  if(!dados||dados.colaboradores.length===0){
+    frag.appendChild(mk("div","sl","\u26A0 Nenhum lan\u00E7amento de Opera\u00E7\u00E3o Assistida encontrado para este n\u00FAcleo no per\u00EDodo."));
+    return frag;
+  }
+
+  // Card total
+  var grid=mk("div","tgrid");
+  var card=mk("div","tc pos");card.appendChild(mk("label","","Total Op. Assistida"));card.appendChild(mk("div","val",fmtH(dados.total)));
+  grid.appendChild(card);
+  var card2=mk("div","tc fat");card2.appendChild(mk("label","","Colaboradores"));card2.appendChild(mk("div","val",String(dados.colaboradores.length)));
+  grid.appendChild(card2);
+  frag.appendChild(grid);
+
+  // Busca
+  var tb=mk("div","tbar");
+  var si=mk("input");si.className="sinp";si.type="text";si.placeholder="Buscar colaborador...";
+  si.oninput=function(){
+    var q=si.value.toLowerCase().trim();
+    (frag.getElementById?frag:document.querySelector("#"+nid+" .view-panel.on")).querySelectorAll(".oa-card").forEach(function(el){
+      el.classList.toggle("hs",q&&!el.dataset.nome.includes(q));
+    });
+  };
+  var bE=mk("button","xbtn","Expandir");var bR=mk("button","xbtn","Recolher");
+  bE.onclick=function(){document.querySelector("#"+nid+" .view-panel.on").querySelectorAll(".oa-card,.oa-gdp-block").forEach(function(el){el.classList.add("op");});};
+  bR.onclick=function(){document.querySelector("#"+nid+" .view-panel.on").querySelectorAll(".oa-card,.oa-gdp-block").forEach(function(el){el.classList.remove("op");});};
+  tb.appendChild(si);tb.appendChild(bE);tb.appendChild(bR);
+  frag.appendChild(tb);
+
+  dados.colaboradores.forEach(function(c){
+    var cid="oa"+uid();var card=mk("div","oa-card");card.id=cid;card.dataset.nome=c.nome.toLowerCase();
+    var h=mk("div","oa-hdr");h.onclick=function(){tog(cid);};
+    h.appendChild(mk("div","oa-av",ini(c.nome)));
+    h.appendChild(mk("span","oa-nome",c.nome));
+    h.appendChild(mk("span","oa-espec",c.espec||""));
+    h.appendChild(mk("span","oa-horas",fmtH(c.horas)));
+    h.appendChild(mk("span","oa-chv","\u25BC"));
+    var b=mk("div","oa-body");
+
+    c.projetos.forEach(function(proj){
+      b.appendChild(mk("div","oa-proj-sep","[Proj] "+proj.nome+" — "+fmtH(proj.horas)));
+      proj.gdps.forEach(function(gdp){
+        var gid="oag"+uid();var gb=mk("div","oa-gdp-block");gb.id=gid;
+        var gh=mk("div","oa-gdp-hdr");gh.onclick=function(){tog(gid);};
+        gh.appendChild(mk("span","oa-gdp-label","GDP:"+gdp.gdp+" / "+gdp.cliente));
+        gh.appendChild(mk("span","oa-gdp-h",fmtH(gdp.horas)));
+        gh.appendChild(mk("span","oa-gdp-chv","\u25BC"));
+        var gbd=mk("div","oa-gdp-body");
+        gdp.atividades.forEach(function(a){
+          var r=mk("div","oa-atv-row");
+          r.appendChild(mk("span","oa-atv-id","["+a.id+"]"));
+          r.appendChild(mk("span","oa-atv-titulo",a.titulo));
+          r.appendChild(mk("span","oa-atv-data",a.data));
+          r.appendChild(mk("span","oa-atv-h",fmtH(a.horas)));
+          gbd.appendChild(r);
+        });
+        gb.appendChild(gh);gb.appendChild(gbd);b.appendChild(gb);
+      });
+    });
+    card.appendChild(h);card.appendChild(b);frag.appendChild(card);
+  });
+  return frag;
+}
+
+if(typeof OA==="undefined"){var OA={label:"",nucleos:{}};}
 var DADOS_MESES=CRUZ.map(function(m){return m.label;});
 var MT=document.getElementById("MT");var MN=document.getElementById("MN");
 // Gerar NUCLEOS dinamicamente a partir dos dados disponíveis
@@ -761,10 +850,10 @@ NUCLEOS.forEach(function(n,ni){
   np.appendChild(mesWrap);
 
   var vbar=mk("div","view-bar");
-  var VIEWS=["Posicional","Lan\u00E7amentos","Desempenho de Faturamento"];
+  var VIEWS=["Posicional","Lan\u00E7amentos","Desempenho de Faturamento","Op. Assistida"];
   VIEWS.forEach(function(v,vi){
     var vt=mk("button","view-tab"+(vi===0?" on":""),v);
-    (function(nid2,vii){vt.onclick=function(){swView(nid2,vii);if(vii===2){cruzState.nucleo=n.nome;renderCruz();}};})(nid,vi);
+    (function(nid2,vii,nn){vt.onclick=function(){swView(nid2,vii);if(vii===2){cruzState.nucleo=nn;renderCruz();}};})(nid,vi,n.nome);
     vbar.appendChild(vt);
   });
   np.appendChild(vbar);
@@ -811,6 +900,9 @@ NUCLEOS.forEach(function(n,ni){
   // Wrap para resultado
   var cruzWrap=mk("div");cruzWrap.id="cruzWrap_"+n.nome;vc.appendChild(cruzWrap);
   np.appendChild(vc);
+  // View 3: Op. Assistida
+  var voa=mk("div","view-panel");
+  voa.appendChild(bViewOA(n.lkey,nid));np.appendChild(voa);
   panel.appendChild(np);
 });
 MN.appendChild(panel);
