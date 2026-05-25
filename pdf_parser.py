@@ -56,7 +56,8 @@ def parse_posicional_pdf(pdf_file) -> dict:
     # ── Padrões ───────────────────────────────────────────────────────────────
     RE_OS      = re.compile(r'^O\.S\.\s+(.+)$')
     RE_TOTAL_H = re.compile(r'^Total Horas:\s*([\d.,]+)$')
-    RE_PROJ    = re.compile(r'^(SH\d+|SS\d+|PS\d+|SJ\d+|SV\d+)\s+(.+?)\s+([\d.,]+)$')
+    # SH, SS, PS, SJ, SV = NSS1/NSS2/NSS3 | SB, SU = NC (SMADS, SMC, SMDHC, SMPED, SPCINE, FTM)
+    RE_PROJ    = re.compile(r'^(SH\d+|SS\d+|PS\d+|SJ\d+|SV\d+|SB\d+|SU\d+)\s+(.+?)\s+([\d.,]+)$')
     RE_DEM     = re.compile(r'^(\d{6})\s*-\s*(.+?)\s+(\d{5,6})\s+([\d.,]+)$')
     RE_ATIV    = re.compile(r'^(\d{6})\s+.+')
     RE_SKIP    = re.compile(
@@ -83,7 +84,7 @@ def parse_posicional_pdf(pdf_file) -> dict:
         # OS
         m = RE_OS.match(linha)
         if m:
-            os_cur  = {"desc": m.group(1).strip(), "horas": 0, "projetos": []}
+            os_cur   = {"desc": m.group(1).strip(), "horas": 0, "projetos": []}
             proj_cur = dem_cur = None
             sec["oss"].append(os_cur)
             i += 1
@@ -113,7 +114,6 @@ def parse_posicional_pdf(pdf_file) -> dict:
         # Demanda
         m = RE_DEM.match(linha)
         if m and proj_cur:
-            # Título pode quebrar em linhas seguintes
             titulo = m.group(2).strip()
             j = i + 1
             while j < len(linhas):
