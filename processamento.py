@@ -73,14 +73,6 @@ def periodo_de(mes_ref: str):
 # ── CARREGAMENTO DE DADOS ─────────────────────────────────────────────────────
 
 def carregar_csv(arquivos) -> pd.DataFrame:
-    """
-    Lê um ou mais arquivos CSV de lançamentos e retorna um DataFrame
-    consolidado com colunas padronizadas.
-
-    Parâmetros
-    ----------
-    arquivos : lista de file-like objects (vindos do st.file_uploader)
-    """
     dfs = []
     for f in arquivos:
         try:
@@ -95,11 +87,8 @@ def carregar_csv(arquivos) -> pd.DataFrame:
         return pd.DataFrame()
 
     lanc = pd.concat(dfs, ignore_index=True)
-
-    # Deduplicar pela combinação rf + atividade + data + horas
     lanc = lanc.drop_duplicates(subset=["rf", "atividade", "data", "horas"])
 
-    # Colunas derivadas
     lanc["rf_norm"]     = lanc["rf"].fillna("").str.strip().str.lower()
     lanc["horas_num"]   = pd.to_numeric(
         lanc["horas"].str.replace(",", ".", regex=False), errors="coerce"
@@ -115,10 +104,6 @@ def carregar_csv(arquivos) -> pd.DataFrame:
 
 
 def carregar_colaboradores(arquivo) -> pd.DataFrame:
-    """
-    Lê o arquivo xlsx de colaboradores do mês.
-    Colunas esperadas: RF, Nome, Núcleo, Tipo, Especialização
-    """
     df = pd.read_excel(arquivo, dtype=str)
     df.columns = df.columns.str.strip()
     df["RF_norm"] = df["RF"].fillna("").str.strip().str.lower()
@@ -128,10 +113,6 @@ def carregar_colaboradores(arquivo) -> pd.DataFrame:
 
 
 def carregar_status(arquivo) -> dict:
-    """
-    Lê o CSV de status de GDPs.
-    Retorna dict: id_gds_ou_gdp -> {"status": str, "cor": str}
-    """
     try:
         df = pd.read_csv(arquivo, sep=";", encoding="latin-1", dtype=str)
     except Exception:
@@ -162,36 +143,17 @@ def processar_posicional(
     periodo_fim: pd.Timestamp,
     status_map: dict,
 ) -> dict:
-    """
-    Cruza a estrutura do posicional (PDF) com os lançamentos do CSV.
-
-    estrutura_pdf: dict com chaves "secretarias" contendo lista de:
-        {
-          "desc": str,
-          "oss": [{
-            "desc": str,
-            "projetos": [{
-              "cod": str, "nome": str,
-              "demandas": [{
-                "gdp": str, "gds": str, "titulo": str,
-                "horas": float, "atividades": [str, ...]
-              }]
-            }]
-          }]
-        }
-
-    Retorna dict com mesma estrutura + lançamentos do CSV em cada demanda.
-    """
-    # Atividades presentes em qualquer lugar no CSV (para detectar faltando)
-    atividades_no_csv = set(lanc_df["atividade"].dropna().unique())
-
     # Filtrar CSV pelo período
     periodo = lanc_df[
         (lanc_df["data_dt"] >= periodo_ini) &
         (lanc_df["data_dt"] <= periodo_fim)
     ]
 
-    # Mapa: atividade → lista de lançamentos
+    # ── CORREÇÃO: usar apenas atividades presentes NO PERÍODO, não no CSV inteiro
+    # Isso garante que atividades de outros meses não mascarem divergências
+    atividades_no_periodo = set(periodo["atividade"].dropna().unique())
+
+    # Mapa: atividade → lista de lançamentos (já filtrado por período)
     mapa_lanc = defaultdict(list)
     for _, row in periodo.iterrows():
         atv = row["atividade"]
@@ -232,7 +194,6 @@ def processar_posicional(
                     hit    = status_map.get(gds, {}) if status_map else {}
                     status = hit.get("status", "") if isinstance(hit, dict) else ""
 
-                    # Por atividade do PDF → lançamentos do CSV
                     colaboradores: dict[str, dict] = defaultdict(
                         lambda: {"nome": "", "rf": "", "lancamentos": []}
                     )
@@ -240,7 +201,9 @@ def processar_posicional(
 
                     for atv in ativs:
                         lancs = mapa_lanc.get(atv, [])
-                        if not lancs and atv not in atividades_no_csv:
+                        # ── CORREÇÃO: marcar como faltando se não há lançamento
+                        # NO PERÍODO (não importa se existe em outro mês)
+                        if not lancs:
                             faltando.append(atv)
                         for l in lancs:
                             rf = l["rf"]
@@ -255,14 +218,12 @@ def processar_posicional(
                                 "gdp":       gdp,
                             })
 
-                    # Somar horas por colaborador
                     colab_list = []
                     for rf, col in colaboradores.items():
                         h = sum(x["horas"] for x in col["lancamentos"])
                         colab_list.append({**col, "horas": round(h, 2)})
                     colab_list.sort(key=lambda x: x["horas"], reverse=True)
 
-                    # Descrição da demanda
                     if gdp != gds:
                         desc_dem = f"GDP {gdp} / GDS {gds} — {titulo}"
                     else:
@@ -301,12 +262,6 @@ def calcular_lancamentos_nucleo(
     periodo_ini: pd.Timestamp,
     periodo_fim: pd.Timestamp,
 ) -> list[dict]:
-    """
-    Para cada colaborador do núcleo, calcula horas por categoria
-    (Faturável, Não Faturável, Interno PRODAM) no período.
-
-    Retorna lista de dicts com dados do colaborador + DataFrame de lançamentos.
-    """
     periodo = lanc_df[
         (lanc_df["data_dt"] >= periodo_ini) &
         (lanc_df["data_dt"] <= periodo_fim)
@@ -333,7 +288,7 @@ def calcular_lancamentos_nucleo(
             "nfat":  round(nfat, 2),
             "int":   round(intp, 2),
             "total": round(fat + nfat + intp, 2),
-            "lancamentos": lc,  # DataFrame completo para drill-down
+            "lancamentos": lc,
         })
 
     return resultado
@@ -350,20 +305,12 @@ def calcular_desempenho_nucleo(
     periodo_fim: pd.Timestamp,
     status_map: dict,
 ) -> list[dict]:
-    """
-    Para cada colaborador do núcleo:
-    - Lançado  = horas no CSV no período
-    - Faturado = horas dele em qualquer posicional (fat_map global)
-
-    Retorna lista de dicts ordenada por tipo (Prodam primeiro) depois nome.
-    """
     periodo = lanc_df[
         (lanc_df["data_dt"] >= periodo_ini) &
         (lanc_df["data_dt"] <= periodo_fim)
     ]
     fat_per = periodo[(~periodo["eh_prodam"]) & (~periodo["eh_ausencia"])]
 
-    # GDS faturados (para marcar ✅/❌ no drill-down)
     gds_faturados = set(fat_map.get("_gds_faturados", set()))
 
     colab_nucleo = colab_df[colab_df["Núcleo"] == nucleo].copy()
@@ -382,7 +329,6 @@ def calcular_desempenho_nucleo(
         hnfat = round(max(hlanc - hfat, 0), 2)
         pct   = round(hfat / hlanc * 100, 1) if hlanc > 0 else 0
 
-        # Drill-down: lançamentos faturáveis por GDS
         lc_fat = fat_per[fat_per["rf_norm"] == rf]
         drill  = []
         if not lc_fat.empty:
@@ -421,18 +367,16 @@ def calcular_desempenho_nucleo(
             "faturado":     hfat,
             "nao_faturado": hnfat,
             "pct_fat":      pct,
-            "pct_contrib":  0.0,  # calculado depois
+            "pct_contrib":  0.0,
             "drill":        drill,
         })
 
-    # Ordenar: Prodam primeiro, depois por tipo alfa, dentro alfa por nome
     resultado.sort(key=lambda x: (
         0 if x["tipo"] == "Prodam" else 1,
         x["tipo"],
         x["nome"],
     ))
 
-    # % de contribuição sobre o total faturado do núcleo
     tot_fat = sum(c["faturado"] for c in resultado)
     for c in resultado:
         c["pct_contrib"] = round(c["faturado"] / tot_fat * 100, 1) \
@@ -442,11 +386,6 @@ def calcular_desempenho_nucleo(
 
 
 def construir_fat_map(pos_estrutura: dict) -> dict:
-    """
-    Varre o posicional processado e monta:
-    - fat_map[rf] = total horas faturadas (em qualquer contrato)
-    - fat_map["_gds_faturados"] = set de GDS que aparecem no posicional
-    """
     fat   = defaultdict(float)
     gds_f = set()
 
