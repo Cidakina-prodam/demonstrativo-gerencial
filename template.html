@@ -723,40 +723,76 @@ function swN(mid,ni){document.querySelectorAll("#"+mid+" .np").forEach(function(
 // ── OPERAÇÃO ASSISTIDA ─────────────────────────────────────────────────────
 function bViewOA(nucleo_key, nid){
   var frag=document.createDocumentFragment();
-  // OA é dict por mês: {label: {label, nucleos}} ou legado {label, nucleos}
+  var PACOTE_NSS1=1000;
+
+  // Resolver mês selecionado
   var mes_label=mesState&&mesState.idx!==undefined?CRUZ[mesState.idx].label:null;
   var oa_mes=null;
-  if(OA&&OA.nucleos){oa_mes=OA;} // formato legado
+  if(OA&&OA.nucleos){oa_mes=OA;}
   else if(mes_label&&OA&&OA[mes_label]){oa_mes=OA[mes_label];}
   else if(OA){var keys=Object.keys(OA);if(keys.length>0)oa_mes=OA[keys[keys.length-1]];}
+
+  // ── Card de resumo geral no topo (chips por núcleo + barra NSS1) ──────────
+  var resumo=mk("div");resumo.style.cssText="background:var(--sf);border-radius:var(--rd);padding:14px 18px;margin-bottom:16px;border:1.5px solid var(--bd);box-shadow:var(--sh)";
+  var rtit=mk("div");rtit.style.cssText="font-size:.72rem;font-weight:700;color:var(--tm);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px";
+  rtit.textContent="Op. Assistida — "+(mes_label||"");
+  resumo.appendChild(rtit);
+
+  // Chips por núcleo
+  var rgrid=mk("div");rgrid.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px";
+  ["NSS1","NSS2","NSS3","NC"].forEach(function(nk){
+    var d=oa_mes&&oa_mes.nucleos?oa_mes.nucleos[nk]:null;
+    var tot=d?d.total:0;
+    var chip=mk("div");chip.style.cssText="background:var(--ap);border-radius:8px;padding:8px 14px;min-width:90px;text-align:center;"+(nk===nucleo_key?"border:2px solid var(--ae)":"border:2px solid transparent");
+    var cn=mk("div");cn.style.cssText="font-size:.63rem;font-weight:700;color:var(--ae);text-transform:uppercase;margin-bottom:2px";cn.textContent=nk;
+    var cv=mk("div");cv.style.cssText="font-family:'DM Mono',monospace;font-size:.95rem;font-weight:700;color:var(--tx)";cv.textContent=fmtH(tot);
+    chip.appendChild(cn);chip.appendChild(cv);rgrid.appendChild(chip);
+  });
+  resumo.appendChild(rgrid);
+
+  // Barra de progresso NSS1 vs pacote 1000h
+  var nss1_tot=oa_mes&&oa_mes.nucleos&&oa_mes.nucleos["NSS1"]?oa_mes.nucleos["NSS1"].total:0;
+  var pct=Math.round(nss1_tot/PACOTE_NSS1*100);
+  var cls=pct>=100?"over":pct>=80?"warn":"ok";
+  var pwrap=mk("div");pwrap.style.cssText="background:var(--ab);border-radius:8px;padding:10px 14px";
+  var plbl=mk("div");plbl.style.cssText="font-size:.7rem;font-weight:600;color:var(--tm);margin-bottom:6px";
+  plbl.textContent="NSS1 — Pacote OA contrato SMS 107 ("+PACOTE_NSS1+"h/mês)";
+  var bar_bg=mk("div");bar_bg.style.cssText="background:#e8edf3;border-radius:20px;height:12px;overflow:hidden;margin-bottom:5px";
+  var bar_fill=mk("div");
+  var fill_color=pct>=100?"#C00000":pct>=80?"#F39C12":"#27AE60";
+  bar_fill.style.cssText="height:12px;border-radius:20px;background:"+fill_color+";width:"+Math.min(pct,100)+"%";
+  bar_bg.appendChild(bar_fill);
+  var pnums=mk("div");pnums.style.cssText="display:flex;justify-content:space-between;font-size:.74rem;font-family:'DM Mono',monospace";
+  var pLeft=mk("span");pLeft.style.color="var(--tm)";pLeft.textContent="Lançado: "+fmtH(nss1_tot)+" / "+PACOTE_NSS1+"h";
+  var pRight=mk("span");pRight.style.cssText="font-weight:700;color:"+fill_color;
+  pRight.textContent=pct+"%"+(pct>=100?" ⚠ acima do pacote":"");
+  pnums.appendChild(pLeft);pnums.appendChild(pRight);
+  pwrap.appendChild(plbl);pwrap.appendChild(bar_bg);pwrap.appendChild(pnums);
+  resumo.appendChild(pwrap);
+  frag.appendChild(resumo);
+
+  // ── Colaboradores do núcleo selecionado ───────────────────────────────────
   var dados=oa_mes&&oa_mes.nucleos?oa_mes.nucleos[nucleo_key]:null;
   if(!dados||dados.colaboradores.length===0){
-    frag.appendChild(mk("div","sl","\u26A0 Nenhum lan\u00E7amento de Opera\u00E7\u00E3o Assistida encontrado para este n\u00FAcleo no per\u00EDodo."));
+    frag.appendChild(mk("div","sl","\u26A0 Nenhum lan\u00E7amento de OA neste n\u00FAcleo no per\u00EDodo."));
     return frag;
   }
 
-  // Card total
-  var grid=mk("div","tgrid");
-  var card=mk("div","tc pos");card.appendChild(mk("label","","Total Op. Assistida"));card.appendChild(mk("div","val",fmtH(dados.total)));
-  grid.appendChild(card);
-  var card2=mk("div","tc fat");card2.appendChild(mk("label","","Colaboradores"));card2.appendChild(mk("div","val",String(dados.colaboradores.length)));
-  grid.appendChild(card2);
-  frag.appendChild(grid);
+  // Separador com total do núcleo
+  var sep=mk("div");sep.style.cssText="background:var(--ae);color:#fff;font-size:.78rem;font-weight:700;letter-spacing:.8px;text-transform:uppercase;padding:8px 16px;border-radius:8px;margin-bottom:10px;display:flex;align-items:center;gap:8px";
+  sep.appendChild(mk("span","",nucleo_key+" — Op. Assistida"));
+  var stot=mk("span");stot.style.cssText="margin-left:auto;font-family:'DM Mono',monospace;font-size:.9rem";stot.textContent=fmtH(dados.total);
+  sep.appendChild(stot);
+  frag.appendChild(sep);
 
-  // Busca
+  // Busca + botões
   var tb=mk("div","tbar");
   var si=mk("input");si.className="sinp";si.type="text";si.placeholder="Buscar colaborador...";
-  si.oninput=function(){
-    var q=si.value.toLowerCase().trim();
-    (frag.getElementById?frag:document.querySelector("#"+nid+" .view-panel.on")).querySelectorAll(".oa-card").forEach(function(el){
-      el.classList.toggle("hs",q&&!el.dataset.nome.includes(q));
-    });
-  };
+  si.oninput=function(){var q=si.value.toLowerCase().trim();document.querySelector("#"+nid+" .view-panel.on").querySelectorAll(".oa-card").forEach(function(el){el.classList.toggle("hs",q&&!el.dataset.nome.includes(q));});};
   var bE=mk("button","xbtn","Expandir");var bR=mk("button","xbtn","Recolher");
   bE.onclick=function(){document.querySelector("#"+nid+" .view-panel.on").querySelectorAll(".oa-card,.oa-gdp-block").forEach(function(el){el.classList.add("op");});};
   bR.onclick=function(){document.querySelector("#"+nid+" .view-panel.on").querySelectorAll(".oa-card,.oa-gdp-block").forEach(function(el){el.classList.remove("op");});};
-  tb.appendChild(si);tb.appendChild(bE);tb.appendChild(bR);
-  frag.appendChild(tb);
+  tb.appendChild(si);tb.appendChild(bE);tb.appendChild(bR);frag.appendChild(tb);
 
   dados.colaboradores.forEach(function(c){
     var cid="oa"+uid();var card=mk("div","oa-card");card.id=cid;card.dataset.nome=c.nome.toLowerCase();
@@ -767,7 +803,6 @@ function bViewOA(nucleo_key, nid){
     h.appendChild(mk("span","oa-horas",fmtH(c.horas)));
     h.appendChild(mk("span","oa-chv","\u25BC"));
     var b=mk("div","oa-body");
-
     c.projetos.forEach(function(proj){
       b.appendChild(mk("div","oa-proj-sep","[Proj] "+proj.nome+" — "+fmtH(proj.horas)));
       proj.gdps.forEach(function(gdp){
@@ -792,6 +827,7 @@ function bViewOA(nucleo_key, nid){
   });
   return frag;
 }
+
 
 if(typeof OA==="undefined"){var OA={label:"",nucleos:{}};}
 var DADOS_MESES=CRUZ.map(function(m){return m.label;});
