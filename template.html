@@ -723,7 +723,13 @@ function swN(mid,ni){document.querySelectorAll("#"+mid+" .np").forEach(function(
 // ── OPERAÇÃO ASSISTIDA ─────────────────────────────────────────────────────
 function bViewOA(nucleo_key, nid){
   var frag=document.createDocumentFragment();
-  var dados=OA&&OA.nucleos?OA.nucleos[nucleo_key]:null;
+  // OA é dict por mês: {label: {label, nucleos}} ou legado {label, nucleos}
+  var mes_label=mesState&&mesState.idx!==undefined?CRUZ[mesState.idx].label:null;
+  var oa_mes=null;
+  if(OA&&OA.nucleos){oa_mes=OA;} // formato legado
+  else if(mes_label&&OA&&OA[mes_label]){oa_mes=OA[mes_label];}
+  else if(OA){var keys=Object.keys(OA);if(keys.length>0)oa_mes=OA[keys[keys.length-1]];}
+  var dados=oa_mes&&oa_mes.nucleos?oa_mes.nucleos[nucleo_key]:null;
   if(!dados||dados.colaboradores.length===0){
     frag.appendChild(mk("div","sl","\u26A0 Nenhum lan\u00E7amento de Opera\u00E7\u00E3o Assistida encontrado para este n\u00FAcleo no per\u00EDodo."));
     return frag;
