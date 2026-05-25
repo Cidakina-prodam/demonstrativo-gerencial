@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -607,6 +608,10 @@ function calcTotPos(data){
 }
 function bViewPos(key,nid){
   var data=POS[key];var frag=document.createDocumentFragment();
+  if(!data||!data.secretarias){
+    frag.appendChild(mk("div","sem-pos","⚠ Posicional não disponível para este núcleo neste mês."));
+    return frag;
+  }
   var t=calcTotPos(data);
   var grid=mk("div","tgrid");
   [{c:"pos",l:"Horas Posicional",v:fmtH(t.horas)},{c:"lancx",l:"Horas Lan\u00E7adas",v:fmtH(t.lancadas)},{c:"divx",l:"Diverg\u00EAncias",v:t.diverg===0?"\u2714 0":String(t.diverg)},{c:"cob",l:"Cobertura",v:t.diverg===0?"100%":Math.round(t.lancadas/t.horas*100)+"%"}].forEach(function(x){
@@ -689,7 +694,18 @@ function swN(mid,ni){document.querySelectorAll("#"+mid+" .np").forEach(function(
 // ── BUILD ─────────────────────────────────────────────────────────────────────
 var DADOS_MESES=CRUZ.map(function(m){return m.label;});
 var MT=document.getElementById("MT");var MN=document.getElementById("MN");
-var NUCLEOS=[{nome:"NSS1",pkey:"nss1",lkey:"NSS1"},{nome:"NSS3",pkey:"nss3",lkey:"NSS3"}];
+// Gerar NUCLEOS dinamicamente a partir dos dados disponíveis
+var NUCLEOS=(function(){
+  var ordem=["NSS1","NSS2","NSS3","NC"];
+  var presentes={};
+  // Checar POS
+  Object.keys(POS).forEach(function(k){presentes[k.toUpperCase()]=true;});
+  // Checar LANC
+  Object.keys(LANC).forEach(function(k){presentes[k.toUpperCase()]=true;});
+  // Checar CRUZ
+  CRUZ.forEach(function(m){(m.nucleos||[]).forEach(function(n){if(n.total_lancado>0)presentes[n.nome.toUpperCase()]=true;});});
+  return ordem.filter(function(n){return presentes[n];}).map(function(n){return {nome:n,pkey:n.toLowerCase(),lkey:n};});
+})();
 // NSS3 lançamentos agora disponíveis
 
 // Aba ABRIL
