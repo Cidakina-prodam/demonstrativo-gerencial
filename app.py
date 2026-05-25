@@ -81,7 +81,7 @@ def parse_posicional_pdf(pdf_file) -> dict:
     # ── Padrões ───────────────────────────────────────────────────────────────
     RE_OS      = re.compile(r'^O\.S\.\s+(.+)$')
     RE_TOTAL_H = re.compile(r'^Total Horas:\s*([\d.,]+)$')
-    RE_PROJ    = re.compile(r'^(SH\d+|SS\d+|PS\d+|SJ\d+|SV\d+)\s+(.+?)\s+([\d.,]+)$')
+    RE_PROJ    = re.compile(r'^(SH\d+|SS\d+|PS\d+|SJ\d+|SV\d+|SB\d+|SU\d+)\s+(.+?)\s+([\d.,]+)$')
     RE_DEM     = re.compile(r'^(\d{6})\s*-\s*(.+?)\s+(\d{5,6})\s+([\d.,]+)$')
     RE_ATIV    = re.compile(r'^(\d{6})\s+.+')
     RE_SKIP    = re.compile(
@@ -183,42 +183,6 @@ def estrutura_para_pos_format(parsed: dict) -> dict:
     return {"secretarias": parsed["secretarias"]}
 
 
-
-# ── EXTRAIR DADOS HISTÓRICOS DO HTML ANTERIOR ────────────────────────────────
-import re as _re
-
-def extrair_dados_html(html_file) -> dict:
-    """
-    Lê o HTML de meses anteriores e extrai POS, LANC, CRUZ históricos.
-    Retorna dict com chaves pos_hist, lanc_hist, cruz_hist (listas/dicts).
-    """
-    try:
-        texto = html_file.read().decode("utf-8")
-    except Exception:
-        return {}
-
-    def _extrair_var(nome, txt):
-        pat = "var " + nome + r"=(.+?);\n"
-        m = _re.search(pat, txt)
-        if m:
-            try:
-                return json.loads(m.group(1))
-            except Exception:
-                return None
-        return None
-
-    pos_hist  = _extrair_var("POS",  texto)
-    lanc_hist = _extrair_var("LANC", texto)
-    cruz_hist = _extrair_var("CRUZ", texto)
-    status_hist = _extrair_var("STATUS_MAP", texto)
-
-    return {
-        "pos":    pos_hist  or {},
-        "lanc":   lanc_hist or {},
-        "cruz":   cruz_hist or [],
-        "status": status_hist or {},
-    }
-
 # ── CONFIGURAÇÃO ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Gerador Demonstrativo Gerencial",
@@ -241,30 +205,6 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("## 📂 Arquivos")
-
-    html_anterior = st.file_uploader(
-        "📄 HTML anterior (opcional — acumula histórico)",
-        type=["html"],
-        help="Suba o HTML do mês anterior para manter histórico acumulado"
-    )
-
-    # Gerenciamento de meses históricos
-    meses_remover = []
-    if html_anterior:
-        html_anterior.seek(0)
-        _dados_prev = extrair_dados_html(html_anterior)
-        html_anterior.seek(0)
-        _cruz_prev = _dados_prev.get("cruz") or []
-        _labels_prev = [m.get("label","") for m in _cruz_prev if m.get("label")]
-        if _labels_prev:
-            st.markdown("**📅 Meses no arquivo anterior:**")
-            meses_remover = st.multiselect(
-                "Remover meses (opcional):",
-                options=_labels_prev,
-                help="Selecione meses para remover do histórico antes de gerar"
-            )
-            if meses_remover:
-                st.warning(f"⚠️ {len(meses_remover)} mês(es) será(ão) removido(s): {', '.join(meses_remover)}")
 
     csv_files   = st.file_uploader("CSV de Lançamentos", type=["csv"],
                                     accept_multiple_files=True)
@@ -312,57 +252,39 @@ if pdf_files:
                 st.error(f"❌ Erro no PDF: {e}")
 
 # ── ASSOCIAR PDF A NÚCLEO ─────────────────────────────────────────────────────
-# ── MAPEAMENTO CLIENTE+CONTRATO → NÚCLEO ─────────────────────────────────────
-# Regras avaliadas em ordem; a primeira que bater vence.
-# Cada regra: (trecho_cliente, trecho_contrato_opcional, nucleo)
-# trecho_contrato="" significa "qualquer contrato deste cliente"
-REGRAS_NUCLEO = [
-    # NSS2 — dois contratos HSPM distintos
-    ("HSPM", "TC 094",  "NSS2"),
-    ("HSPM", "TC273",   "NSS2"),
-    ("HSPM", "TC 273",  "NSS2"),
-    # NSS1
-    ("SMS",  "",        "NSS1"),
-    # NSS3
-    ("SEME", "",        "NSS3"),
-    ("SMDET","",        "NSS3"),
-    # NC
-    ("SMADS","",        "NC"),
-    ("SMDHC","",        "NC"),
-    ("SMC",  "",        "NC"),
-    ("SPCINE","",       "NC"),
-    ("FTM",  "",        "NC"),
-    ("SMPED","",        "NC"),
-]
-
-def _nucleo_do_parsed(parsed: dict) -> str:
-    """Detecta o núcleo pelo cliente e contrato extraídos do cabeçalho do PDF."""
-    cliente  = (parsed.get("cliente")  or "").upper()
-    contrato = (parsed.get("contrato") or "").upper()
-    for trecho_cli, trecho_cont, nucleo in REGRAS_NUCLEO:
-        if trecho_cli.upper() in cliente:
-            if not trecho_cont or trecho_cont.upper() in contrato:
-                return nucleo
-    return "NSS1"  # fallback
+# Mapa OS → núcleo
+OS_NUCLEO_MAP = {
+    "GDS-1 - Operação Assistida":    "NSS1",
+    "NSS-1 - Manutenção e Melhorias":"NSS1",
+    "NSS-2 - Manutenção e Melhorias":"NSS2",
+    "NSS-3 - Manutenção e Melhorias":"NSS3",
+}
 
 # Agrupar demandas por núcleo a partir dos PDFs
 pos_por_nucleo = defaultdict(lambda: {"secretarias": []})
 
 for parsed in posicionais_raw:
-    nucleo = _nucleo_do_parsed(parsed)
-
     for sec_raw in parsed["secretarias"]:
-        sec_desc = sec_raw["desc"]
-        sec_existente = next(
-            (s for s in pos_por_nucleo[nucleo]["secretarias"]
-             if s["desc"] == sec_desc),
-            None
-        )
-        if sec_existente is None:
-            sec_existente = {"desc": sec_desc, "horas": sec_raw["horas"], "oss": []}
-            pos_por_nucleo[nucleo]["secretarias"].append(sec_existente)
-
         for os_raw in sec_raw["oss"]:
+            # Descobrir núcleo pela descrição da OS
+            nucleo = "NSS1"  # default
+            for key, nuc in OS_NUCLEO_MAP.items():
+                if key in os_raw["desc"]:
+                    nucleo = nuc
+                    break
+
+            # Agrupar por secretaria dentro do núcleo
+            # Encontrar secretaria existente ou criar nova
+            sec_desc = sec_raw["desc"]
+            sec_existente = next(
+                (s for s in pos_por_nucleo[nucleo]["secretarias"]
+                 if s["desc"] == sec_desc),
+                None
+            )
+            if sec_existente is None:
+                sec_existente = {"desc": sec_desc, "horas": sec_raw["horas"], "oss": []}
+                pos_por_nucleo[nucleo]["secretarias"].append(sec_existente)
+
             sec_existente["oss"].append(os_raw)
 
 # Processar posicional por núcleo
@@ -568,39 +490,15 @@ with st.spinner("Gerando HTML..."):
     COLORS = ["#2E75B6","#FFD966","#70AD47","#FF6B6B","#9B59B6","#E07B39","#1ABC9C",
               "#E74C3C","#3498DB","#F39C12","#27AE60","#8E44AD","#16A085","#D35400","#2980B9"]
 
-    # ── Mesclar com histórico do HTML anterior ────────────────────────────────
-    dados_hist = {}
-    if html_anterior:
-        html_anterior.seek(0)
-        dados_hist = extrair_dados_html(html_anterior)
-
-    # POS e LANC: sempre usa os dados do mês novo (processados acima)
+    # Converter pos_processado para formato POS (dict por núcleo)
     pos_json_dict = {k.lower(): v for k, v in pos_processado.items()}
-    pos_final = dict(dados_hist.get("pos") or {})
-    pos_final.update(pos_json_dict)
-
-    lanc_final = dict(dados_hist.get("lanc") or {})
-    lanc_final.update(lanc_por_nucleo)
-
-    # CRUZ: filtrar histórico (removendo meses selecionados + mês atual),
-    # depois adicionar o mês atual reprocessado no final
-    cruz_hist = list(dados_hist.get("cruz") or [])
-    # Remover meses marcados para exclusão E o mês atual (será reinserido)
-    meses_excluir = set(meses_remover) | {mes_ref}
-    cruz_filtrado = [m for m in cruz_hist if m.get("label") not in meses_excluir]
-    cruz_final = cruz_filtrado + CRUZ
-
-    # STATUS_MAP: mesclar (novo prevalece)
-    status_final = dict(dados_hist.get("status") or {})
-    if status_map:
-        status_final.update(status_map)
 
     dados_js = (
-        "var POS="     + json.dumps(pos_final,     ensure_ascii=True).replace("'","'") + ";\n"
-        "var LANC="    + json.dumps(lanc_final,    ensure_ascii=True) + ";\n"
-        "var CRUZ="    + json.dumps(cruz_final,    ensure_ascii=True) + ";\n"
+        "var POS="     + json.dumps(pos_json_dict,    ensure_ascii=True).replace("'","'") + ";\n"
+        "var LANC="    + json.dumps(lanc_por_nucleo,  ensure_ascii=True) + ";\n"
+        "var CRUZ="    + json.dumps(CRUZ,              ensure_ascii=True) + ";\n"
         "var CORES="   + json.dumps(COLORS) + ";\n"
-        "var STATUS_MAP=" + json.dumps(status_final, ensure_ascii=True) + ";\n"
+        "var STATUS_MAP=" + json.dumps(status_map,    ensure_ascii=True) + ";\n"
     )
 
     # ── Ler template HTML e injetar dados ─────────────────────────────────
