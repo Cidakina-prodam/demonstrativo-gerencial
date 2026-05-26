@@ -63,22 +63,17 @@ def extrair_dados_html(html_file) -> dict:
     }
 
 # ── MAPEAMENTO CLIENTE+CONTRATO → NÚCLEO ──────────────────────────────────────
-# Regras avaliadas em ordem; a primeira que bater vence.
 REGRAS_NUCLEO = [
-    # NSS2 — dois contratos HSPM distintos (várias grafias)
     ("HSPM", "TC 094",  "NSS2"),
     ("HSPM", "TC094",   "NSS2"),
     ("HSPM", "TC-094",  "NSS2"),
     ("HSPM", "TC 273",  "NSS2"),
     ("HSPM", "TC273",   "NSS2"),
     ("HSPM", "TC-273",  "NSS2"),
-    ("HSPM", "",        "NSS2"),  # fallback: qualquer PDF com HSPM é NSS2
-    # NSS1
+    ("HSPM", "",        "NSS2"),
     ("SMS",  "",        "NSS1"),
-    # NSS3
     ("SEME", "",        "NSS3"),
     ("SMDET","",        "NSS3"),
-    # NC
     ("SMADS","",        "NC"),
     ("SMDHC","",        "NC"),
     ("SMC",  "",        "NC"),
@@ -94,7 +89,7 @@ def _nucleo_do_parsed(parsed: dict) -> str:
         if trecho_cli.upper() in cliente:
             if not trecho_cont or trecho_cont.upper() in contrato:
                 return nucleo
-    return "NSS1"  # fallback
+    return "NSS1"
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -114,7 +109,6 @@ with st.sidebar:
         help="Suba o HTML do mês anterior para manter histórico acumulado"
     )
 
-    # Gerenciamento de meses históricos
     meses_remover = []
     if html_anterior:
         html_anterior.seek(0)
@@ -196,9 +190,10 @@ for parsed in posicionais_raw:
         for os_raw in sec_raw["oss"]:
             sec_existente["oss"].append(os_raw)
 
-# Processar posicional por núcleo
-pos_processado = {}
-fat_map_global = {}
+# ── PROCESSAR POSICIONAL POR NÚCLEO ──────────────────────────────────────────
+pos_processado   = {}
+fat_map_global   = {}
+fat_map_por_nucleo = {}   # FIX: fat_map separado por núcleo — evita soma cross-núcleo
 
 if posicionais_raw:
     with st.spinner("Cruzando posicional com CSV..."):
@@ -206,11 +201,10 @@ if posicionais_raw:
             pos_proc = processar_posicional(estrutura, lanc_df, ini, fim, status_map)
             pos_processado[nucleo] = pos_proc
             fat_map_parcial = construir_fat_map(pos_proc)
-            for rf, h in fat_map_parcial.items():
-                if rf == "_gds_faturados":
-                    fat_map_global.setdefault("_gds_faturados", set()).update(h)
-                else:
-                    fat_map_global[rf] = round(fat_map_global.get(rf, 0) + h, 2)
+            fat_map_por_nucleo[nucleo] = fat_map_parcial
+            # fat_map_global acumula apenas _gds_faturados (usado no drill)
+            gds_f = fat_map_parcial.get("_gds_faturados", set())
+            fat_map_global.setdefault("_gds_faturados", set()).update(gds_f)
 
 # ── BOTÃO GERAR ───────────────────────────────────────────────────────────────
 st.markdown("---")
@@ -364,13 +358,15 @@ with st.spinner("Gerando HTML..."):
     for nucleo in NUCLEOS:
         cn = colab_df[colab_df["Núcleo"] == nucleo]
         colab_list = []
+        # FIX: usa fat_map do núcleo do colaborador — evita soma cross-núcleo
+        _fm_nucleo = fat_map_por_nucleo.get(nucleo, {})
         for _, cr in cn.iterrows():
             rf    = cr["RF_norm"]
             nome  = san(cr["Nome"]).title()
             tipo  = cr["Tipo"]
             espec = san(str(cr.get("Especialização","")))
             hlanc = mapa_per.get(rf, 0)
-            hfat  = round(fat_map_global.get(rf, 0), 2)
+            hfat  = round(_fm_nucleo.get(rf, 0), 2)
             hnfat = round(max(hlanc-hfat,0), 2)
             pct   = round(hfat/hlanc*100,1) if hlanc>0 else 0
             drill = get_drill(rf) if pos_processado else []
@@ -423,10 +419,8 @@ with st.spinner("Gerando HTML..."):
                             "data":  ar["data_dt"].strftime("%d/%m") if pd.notna(ar["data_dt"]) else "",
                             "horas": round(ar["horas_num"], 2),
                         })
-                    # Descrição da demanda/GDP: pegar do titulo_atividade mais comum ou nome_projeto
                     _desc_gdp = ""
                     if "titulo_atividade" in lgds.columns:
-                        # Filtrar linhas que contêm "assistida" no tipo para pegar a descrição real
                         _desc_gdp = san(lgds["titulo_atividade"].iloc[0]) if not lgds.empty else ""
                     gdps.append({
                         "gdp":        san(lgds["gdp_csv"].iloc[0]),
@@ -473,10 +467,8 @@ with st.spinner("Gerando HTML..."):
     cruz_filtrado = [m for m in cruz_hist if m.get("label") not in meses_excluir]
     cruz_final = cruz_filtrado + CRUZ
 
-    # OA: histórico acumulado por mês
     oa_hist = dict(dados_hist.get("oa") or {})
     oa_hist[mes_ref] = OA_MES
-    # Remover meses excluídos do histórico OA também
     for m in meses_remover:
         oa_hist.pop(m, None)
 
