@@ -842,18 +842,8 @@ function bViewOA(nucleo_key, nid){
 if(typeof OA==="undefined"){var OA={label:"",nucleos:{}};}
 var DADOS_MESES=CRUZ.map(function(m){return m.label;});
 var MT=document.getElementById("MT");var MN=document.getElementById("MN");
-// Gerar NUCLEOS dinamicamente a partir dos dados disponíveis
-var NUCLEOS=(function(){
-  var ordem=["NSS1","NSS2","NSS3","NC"];
-  var presentes={};
-  // Checar POS
-  Object.keys(POS).forEach(function(k){presentes[k.toUpperCase()]=true;});
-  // Checar LANC
-  Object.keys(LANC).forEach(function(k){presentes[k.toUpperCase()]=true;});
-  // Checar CRUZ
-  CRUZ.forEach(function(m){(m.nucleos||[]).forEach(function(n){if(n.total_lancado>0)presentes[n.nome.toUpperCase()]=true;});});
-  return ordem.filter(function(n){return presentes[n];}).map(function(n){return {nome:n,pkey:n.toLowerCase(),lkey:n};});
-})();
+// Núcleos sempre fixos — todos os 4 aparecem independente de dados
+var NUCLEOS=["NSS1","NSS2","NSS3","NC"].map(function(n){return {nome:n,pkey:n.toLowerCase(),lkey:n};});
 // NSS3 lançamentos agora disponíveis
 
 // Aba ABRIL
