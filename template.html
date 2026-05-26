@@ -252,13 +252,21 @@ function renderCruz(){
   wrap.innerHTML="";
   var rowMap={};var drillMap={};
 
-  // Filtrar meses selecionados
-  // Usar mês do combo quando disponível
-  var mesesSel;
-  if(mesState&&mesState.idx!==undefined){
-    mesesSel=[CRUZ[mesState.idx]].filter(Boolean);
-  } else {
-    mesesSel=CRUZ.filter(function(_,i){return cruzState.periodos[i];});
+  // Filtrar meses selecionados — sempre pelo checklist (ignora combo global)
+  if(!cruzState.periodos||cruzState.periodos.length!==CRUZ.length){
+    cruzState.periodos=CRUZ.map(function(){return true;});
+  }
+  var mesesSel=CRUZ.filter(function(_,i){return cruzState.periodos[i];});
+  // Sem nenhum selecionado: mostrar zeros
+  if(mesesSel.length===0){
+    wrap.innerHTML="";
+    var grid0=mk("div","tgrid");
+    [{c:"lancx",l:"Total Lançado",v:"0,00h"},{c:"pos",l:"Total Faturado",v:"0,00h"},{c:"cob",l:"Cobertura",v:"0%"},{c:"nfat",l:"Não Faturado",v:"0,00h"}].forEach(function(x){
+      var card=mk("div","tc "+x.c);card.appendChild(mk("label","",x.l));card.appendChild(mk("div","val",x.v));grid0.appendChild(card);
+    });
+    wrap.appendChild(grid0);
+    wrap.appendChild(mk("div","sl","Nenhum período selecionado."));
+    return;
   }
   var nKey=cruzState.nucleo;
 
