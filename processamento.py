@@ -29,7 +29,6 @@ STATUS_CORES = {
     "Aberta":                 "#9B59B6",
 }
 
-# Regra 21→20: período de cada mês de referência
 PERIODOS = {
     "Janeiro 2026":  ("2025-12-21", "2026-01-20"),
     "Fevereiro 2026":("2026-01-21", "2026-02-20"),
@@ -49,7 +48,6 @@ PERIODOS = {
 # ── UTILITÁRIOS ───────────────────────────────────────────────────────────────
 
 def san(v: str) -> str:
-    """Limpa uma string removendo caracteres problemáticos."""
     if not isinstance(v, str):
         return v
     try:
@@ -60,12 +58,10 @@ def san(v: str) -> str:
 
 
 def fmt_h(v) -> str:
-    """Formata horas com 2 casas decimais no padrão brasileiro."""
     return f"{float(v or 0):.2f}h".replace(".", ",")
 
 
 def periodo_de(mes_ref: str):
-    """Retorna (Timestamp_ini, Timestamp_fim) para o mês de referência."""
     ini, fim = PERIODOS[mes_ref]
     return pd.Timestamp(ini), pd.Timestamp(fim)
 
@@ -143,17 +139,13 @@ def processar_posicional(
     periodo_fim: pd.Timestamp,
     status_map: dict,
 ) -> dict:
-    # Filtrar CSV pelo período
     periodo = lanc_df[
         (lanc_df["data_dt"] >= periodo_ini) &
         (lanc_df["data_dt"] <= periodo_fim)
     ]
 
-    # ── CORREÇÃO: usar apenas atividades presentes NO PERÍODO, não no CSV inteiro
-    # Isso garante que atividades de outros meses não mascarem divergências
     atividades_no_periodo = set(periodo["atividade"].dropna().unique())
 
-    # Mapa: atividade → lista de lançamentos (já filtrado por período)
     mapa_lanc = defaultdict(list)
     for _, row in periodo.iterrows():
         atv = row["atividade"]
@@ -194,26 +186,48 @@ def processar_posicional(
                     hit    = status_map.get(gds, {}) if status_map else {}
                     status = hit.get("status", "") if isinstance(hit, dict) else ""
 
-                    colaboradores: dict[str, dict] = defaultdict(
+                    colaboradores: dict = defaultdict(
                         lambda: {"nome": "", "rf": "", "lancamentos": []}
                     )
                     faltando = []
 
-                    for atv in ativs:
-                        lancs = mapa_lanc.get(atv, [])
-                        # ── CORREÇÃO: marcar como faltando se não há lançamento
-                        # NO PERÍODO (não importa se existe em outro mês)
-                        if not lancs:
-                            faltando.append(atv)
-                        for l in lancs:
-                            rf = l["rf"]
-                            colaboradores[rf]["nome"] = l["nome"]
+                    if ativs:
+                        # ── Cruzamento por atividade (padrão)
+                        for atv in ativs:
+                            lancs = mapa_lanc.get(atv, [])
+                            if not lancs:
+                                faltando.append(atv)
+                            for l in lancs:
+                                rf = l["rf"]
+                                colaboradores[rf]["nome"] = l["nome"]
+                                colaboradores[rf]["rf"]   = rf
+                                colaboradores[rf]["lancamentos"].append({
+                                    "atividade": atv,
+                                    "desc":      l["desc"],
+                                    "data":      l["data"],
+                                    "horas":     l["horas"],
+                                    "gds":       gds,
+                                    "gdp":       gdp,
+                                })
+                    else:
+                        # ── Sem atividades listadas: cruzar pelo GDS/GDP no CSV
+                        mask = pd.Series([False] * len(periodo), index=periodo.index)
+                        if gds:
+                            mask = mask | (periodo["gds_csv"] == gds)
+                        if gdp and gdp != gds:
+                            mask = mask | (periodo["gdp_csv"] == gdp)
+                        lancs_gdp = periodo[mask]
+                        if lancs_gdp.empty and gds:
+                            faltando.append(f"GDP:{gdp}/GDS:{gds}")
+                        for _, row in lancs_gdp.iterrows():
+                            rf = row["rf"]
+                            colaboradores[rf]["nome"] = san(str(row.get("nome", rf))).title()
                             colaboradores[rf]["rf"]   = rf
                             colaboradores[rf]["lancamentos"].append({
-                                "atividade": atv,
-                                "desc":      l["desc"],
-                                "data":      l["data"],
-                                "horas":     l["horas"],
+                                "atividade": row["atividade"],
+                                "desc":      san(str(row.get("titulo_atividade", ""))),
+                                "data":      row["data"],
+                                "horas":     row["horas_num"],
                                 "gds":       gds,
                                 "gdp":       gdp,
                             })
@@ -261,7 +275,7 @@ def calcular_lancamentos_nucleo(
     nucleo: str,
     periodo_ini: pd.Timestamp,
     periodo_fim: pd.Timestamp,
-) -> list[dict]:
+) -> list:
     periodo = lanc_df[
         (lanc_df["data_dt"] >= periodo_ini) &
         (lanc_df["data_dt"] <= periodo_fim)
@@ -304,7 +318,7 @@ def calcular_desempenho_nucleo(
     periodo_ini: pd.Timestamp,
     periodo_fim: pd.Timestamp,
     status_map: dict,
-) -> list[dict]:
+) -> list:
     periodo = lanc_df[
         (lanc_df["data_dt"] >= periodo_ini) &
         (lanc_df["data_dt"] <= periodo_fim)
