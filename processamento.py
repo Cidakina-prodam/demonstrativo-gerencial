@@ -428,15 +428,16 @@ def construir_fat_map(pos_estrutura: dict) -> dict:
     Constrói mapa rf_norm -> horas_faturadas a partir da estrutura processada
     do posicional (saída de processar_posicional).
 
-    FIX: deduplicação por (atividade, data, horas) por RF antes de somar.
-    Isso evita dupla contagem quando um colaborador aparece em múltiplas
-    demandas do mesmo GDS/GDP (ex: GDS 27581 com 8 demandas no SS0404/SEME).
+    FIX v2: deduplicação global por (rf, atividade, data, horas).
+    Resolve dupla contagem quando o mesmo colaborador aparece em múltiplas
+    demandas do mesmo GDS (ex: GDS 27581 com 8 demandas no SS0404/SEME).
+    A chave inclui RF para evitar colisão entre colaboradores distintos.
     """
     fat   = defaultdict(float)
     gds_f = set()
 
-    # Acumula lançamentos únicos por RF: chave = (atividade, data, horas)
-    lancs_por_rf: dict[str, set] = defaultdict(set)
+    # set global de lançamentos já contados: (rf, atividade, data, horas)
+    vistos: set = set()
 
     for sec in pos_estrutura.get("secretarias", []):
         for os_ in sec.get("oss", []):
@@ -446,13 +447,12 @@ def construir_fat_map(pos_estrutura: dict) -> dict:
                     for col in dem.get("colaboradores", []):
                         rf = col["rf"].strip().lower()
                         for l in col["lancamentos"]:
-                            # Chave única por lançamento real
-                            chave = (l.get("atividade", ""), l.get("data", ""), l["horas"])
-                            lancs_por_rf[rf].add(chave)
-
-    # Soma horas únicas por RF
-    for rf, chaves in lancs_por_rf.items():
-        fat[rf] = round(sum(h for _, _, h in chaves), 2)
+                            chave = (rf, l.get("atividade", ""), l.get("data", ""), l["horas"])
+                            if chave in vistos:
+                                continue
+                            vistos.add(chave)
+                            fat[rf] = round(fat[rf] + l["horas"], 2)
 
     fat["_gds_faturados"] = gds_f
     return dict(fat)
+
