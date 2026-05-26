@@ -719,13 +719,14 @@ function swM(idx){document.querySelectorAll(".mes-panel").forEach(function(p,i){
 function swView(nid,vi){
   document.querySelectorAll("#"+nid+" .view-panel").forEach(function(p,i){p.classList.toggle("on",i===vi);});
   document.querySelectorAll("#"+nid+" .view-tab").forEach(function(t,i){t.classList.toggle("on",i===vi);});
-  // Esconder seletor de núcleo e seletor de mês do np quando OA ativa
-  var nb=document.querySelector("#"+nid+" .nbar");
-  if(nb)nb.style.display=vi===3?"none":"";
-  var np=document.querySelector("#"+nid+" .np.on");
-  if(np){var mesW=np.querySelector(":scope > div:first-child");if(mesW)mesW.style.display=vi===3?"none":"";}
+  // Esconder seletor de núcleo e seletor de mês quando OA ativa
+  var isOA=vi===3;
+  var nb=document.getElementById("mainNbar");
+  if(nb)nb.style.display=isOA?"none":"";
+  var mw=document.getElementById("mainMesWrap");
+  if(mw)mw.style.display=isOA?"none":"";
   // Renderizar OA ao abrir
-  if(vi===3){renderOA("oaPanel");}
+  if(isOA){renderOA("oaPanel");}
 }
 function swN(mid,ni){document.querySelectorAll("#"+mid+" .np").forEach(function(p,i){p.classList.toggle("on",i===ni);});document.querySelectorAll("#"+mid+" .ntab").forEach(function(t,i){t.classList.toggle("on",i===ni);});}
 // ── BUILD ─────────────────────────────────────────────────────────────────────
@@ -1021,6 +1022,7 @@ NUCLEOS.forEach(function(n,ni){
   (function(mid,nii){nt.onclick=function(){swN(mid,nii);};})(panel.id,ni);
   nbar.appendChild(nt);
 });
+nbar.id="mainNbar";
 panel.appendChild(nbar);
 
 // Estado global do mês selecionado
@@ -1032,6 +1034,7 @@ NUCLEOS.forEach(function(n,ni){
 
   // Combo de mês
   var mesWrap=mk("div");
+  mesWrap.id="mainMesWrap";
   mesWrap.style.cssText="display:flex;align-items:center;gap:10px;margin-bottom:12px";
   var mesLbl=mk("label");mesLbl.textContent="M\u00EAs de refer\u00EAncia:";
   mesLbl.style.cssText="font-size:.75rem;font-weight:600;color:var(--tm);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap";
