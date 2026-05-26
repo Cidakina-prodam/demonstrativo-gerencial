@@ -719,14 +719,14 @@ function swM(idx){document.querySelectorAll(".mes-panel").forEach(function(p,i){
 function swView(nid,vi){
   document.querySelectorAll("#"+nid+" .view-panel").forEach(function(p,i){p.classList.toggle("on",i===vi);});
   document.querySelectorAll("#"+nid+" .view-tab").forEach(function(t,i){t.classList.toggle("on",i===vi);});
-  // Esconder seletor de núcleo e seletor de mês quando OA ativa
-  var isOA=vi===3;
+  // Esconder combo de mês global nas abas que têm checklist próprio (Desempenho=2, OA=3)
+  var hideCombo=(vi===2||vi===3);
   var nb=document.getElementById("mainNbar");
-  if(nb)nb.style.display=isOA?"none":"";
+  if(nb)nb.style.display=vi===3?"none":"";
   var mw=document.getElementById("mainMesWrap");
-  if(mw)mw.style.display=isOA?"none":"";
-  // Renderizar OA ao abrir
-  if(isOA){renderOA("oaPanel");}
+  if(mw)mw.style.display=hideCombo?"none":"";
+  if(vi===2){renderCruz();}
+  if(vi===3){renderOA("oaPanel");}
 }
 function swN(mid,ni){document.querySelectorAll("#"+mid+" .np").forEach(function(p,i){p.classList.toggle("on",i===ni);});document.querySelectorAll("#"+mid+" .ntab").forEach(function(t,i){t.classList.toggle("on",i===ni);});}
 // ── BUILD ─────────────────────────────────────────────────────────────────────
@@ -1096,8 +1096,11 @@ NUCLEOS.forEach(function(n,ni){
   var allItem=mk("div","period-item");
   var allCk=document.createElement("input");allCk.type="checkbox";allCk.id="checkAll_"+n.nome;allCk.checked=true;
   allCk.onchange=function(){
-    document.querySelectorAll(".period-check").forEach(function(c){c.checked=allCk.checked;});
-    cruzState.periodos=CRUZ.map(function(){return allCk.checked;});
+    var val=allCk.checked;
+    // Marcar todos os checks de todos os núcleos
+    document.querySelectorAll(".period-check").forEach(function(c){c.checked=val;});
+    document.querySelectorAll("[id^='checkAll_']").forEach(function(c){c.checked=val;});
+    cruzState.periodos=CRUZ.map(function(){return val;});
     renderCruz();
   };
   allItem.appendChild(allCk);allItem.appendChild(mk("span",null,"Selecionar todos"));
@@ -1107,11 +1110,22 @@ NUCLEOS.forEach(function(n,ni){
     var item=mk("div","period-item");
     var ck=document.createElement("input");ck.type="checkbox";ck.className="period-check period-check-"+n.nome;ck.checked=true;
     ck.dataset.idx=mi;(function(nome){ck.onchange=function(){
+      // Atualizar periodos a partir dos checks do núcleo ativo
       var checks=document.querySelectorAll(".period-check-"+nome);
       var allCkEl=document.getElementById("checkAll_"+nome);
       var allOn=Array.from(checks).every(function(c){return c.checked;});
       if(allCkEl)allCkEl.checked=allOn;
-      cruzState.periodos=Array.from(checks).map(function(c){return c.checked;});
+      // Sincronizar para todos os núcleos (estado compartilhado)
+      var newPeriodos=Array.from(checks).map(function(c){return c.checked;});
+      cruzState.periodos=newPeriodos;
+      // Sincronizar checkboxes dos outros núcleos
+      NUCLEOS.forEach(function(nk){
+        if(nk.nome===nome)return;
+        var otherChecks=document.querySelectorAll(".period-check-"+nk.nome);
+        otherChecks.forEach(function(oc,oi){if(oi<newPeriodos.length)oc.checked=newPeriodos[oi];});
+        var otherAll=document.getElementById("checkAll_"+nk.nome);
+        if(otherAll)otherAll.checked=allOn;
+      });
       cruzState.nucleo=nome;renderCruz();
     };})(n.nome);
     item.appendChild(ck);item.appendChild(mk("span",null,mes.label+(mes.tem_posicional?"":" \u26A0")));
