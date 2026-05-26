@@ -424,8 +424,19 @@ def calcular_desempenho_nucleo(
 
 
 def construir_fat_map(pos_estrutura: dict) -> dict:
+    """
+    Constrói mapa rf_norm -> horas_faturadas a partir da estrutura processada
+    do posicional (saída de processar_posicional).
+
+    FIX: deduplicação por (atividade, data, horas) por RF antes de somar.
+    Isso evita dupla contagem quando um colaborador aparece em múltiplas
+    demandas do mesmo GDS/GDP (ex: GDS 27581 com 8 demandas no SS0404/SEME).
+    """
     fat   = defaultdict(float)
     gds_f = set()
+
+    # Acumula lançamentos únicos por RF: chave = (atividade, data, horas)
+    lancs_por_rf: dict[str, set] = defaultdict(set)
 
     for sec in pos_estrutura.get("secretarias", []):
         for os_ in sec.get("oss", []):
@@ -434,8 +445,14 @@ def construir_fat_map(pos_estrutura: dict) -> dict:
                     gds_f.add(dem.get("gdp_id", ""))
                     for col in dem.get("colaboradores", []):
                         rf = col["rf"].strip().lower()
-                        h  = sum(l["horas"] for l in col["lancamentos"])
-                        fat[rf] = round(fat[rf] + h, 2)
+                        for l in col["lancamentos"]:
+                            # Chave única por lançamento real
+                            chave = (l.get("atividade", ""), l.get("data", ""), l["horas"])
+                            lancs_por_rf[rf].add(chave)
+
+    # Soma horas únicas por RF
+    for rf, chaves in lancs_por_rf.items():
+        fat[rf] = round(sum(h for _, _, h in chaves), 2)
 
     fat["_gds_faturados"] = gds_f
     return dict(fat)
