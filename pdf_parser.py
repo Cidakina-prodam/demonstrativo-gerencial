@@ -10,30 +10,40 @@ import pdfplumber
 
 
 def _extrair_linhas_pdf(pdf_file) -> list:
-    with pdfplumber.open(pdf_file) as pdf:
-        linhas = []
-        for page in pdf.pages:
-            texto = page.extract_text()
-            if texto:
-                for linha in texto.split("\n"):
-                    l = linha.strip()
-                    if l:
-                        linhas.append(l)
+    # Ler bytes uma vez — garante que pdfplumber e pdf2image usam o mesmo conteúdo
+    import io as _io
+    if hasattr(pdf_file, 'getvalue'):
+        raw = pdf_file.getvalue()          # Streamlit UploadedFile
+    elif hasattr(pdf_file, 'read'):
+        raw = pdf_file.read()
+        if hasattr(pdf_file, 'seek'):
+            pdf_file.seek(0)
+    else:
+        with open(pdf_file, 'rb') as fh:
+            raw = fh.read()
 
+    # Tentativa 1: extração de texto nativo com pdfplumber
+    linhas = []
+    try:
+        with pdfplumber.open(_io.BytesIO(raw)) as pdf:
+            for page in pdf.pages:
+                texto = page.extract_text()
+                if texto:
+                    for linha in texto.split("\n"):
+                        l = linha.strip()
+                        if l:
+                            linhas.append(l)
+    except Exception:
+        pass
+
+    # Tentativa 2: OCR se o PDF for baseado em imagem (< 3 linhas úteis)
     linhas_uteis = [l for l in linhas if len(l) > 5]
     if len(linhas_uteis) <= 3:
         try:
-            from pdf2image import convert_from_bytes, convert_from_path
+            from pdf2image import convert_from_bytes
             import pytesseract
 
-            if hasattr(pdf_file, 'read'):
-                data = pdf_file.read()
-                if hasattr(pdf_file, 'seek'):
-                    pdf_file.seek(0)
-                pages = convert_from_bytes(data, dpi=200)
-            else:
-                pages = convert_from_path(pdf_file, dpi=200)
-
+            pages = convert_from_bytes(raw, dpi=200)
             linhas = []
             for page in pages:
                 texto = pytesseract.image_to_string(page, lang='por')
@@ -41,8 +51,10 @@ def _extrair_linhas_pdf(pdf_file) -> list:
                     l = linha.strip()
                     if l:
                         linhas.append(l)
-        except Exception:
-            pass
+        except Exception as e:
+            # Log visível no Streamlit Cloud
+            import sys
+            print(f"[pdf_parser] OCR falhou: {e}", file=sys.stderr)
 
     return linhas
 
