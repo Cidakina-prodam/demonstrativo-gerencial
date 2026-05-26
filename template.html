@@ -876,7 +876,8 @@ function renderOA(containerId){
           proj.gdps.forEach(function(gdp){
             var gid="oag"+uid();var gb=mk("div","oa-gdp-block");gb.id=gid;
             var gh=mk("div","oa-gdp-hdr");gh.onclick=function(){tog(gid);};
-            gh.appendChild(mk("span","oa-gdp-label","GDP:"+gdp.gdp+" / "+gdp.cliente));
+            var gdp_label="GDP:"+gdp.gdp+(gdp.desc?" — "+gdp.desc:"")+" / "+gdp.cliente;
+            gh.appendChild(mk("span","oa-gdp-label",gdp_label));
             gh.appendChild(mk("span","oa-gdp-h",fmtH(gdp.horas)));
             gh.appendChild(mk("span","oa-gdp-chv","▼"));
             var gbd=mk("div","oa-gdp-body");
