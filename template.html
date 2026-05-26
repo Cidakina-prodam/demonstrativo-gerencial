@@ -721,6 +721,141 @@ function swN(mid,ni){document.querySelectorAll("#"+mid+" .np").forEach(function(
 // ── BUILD ─────────────────────────────────────────────────────────────────────
 
 // ── OPERAÇÃO ASSISTIDA ─────────────────────────────────────────────────────
+// Estado global do mês OA (independente de núcleo)
+var oaState={mesIdx:null};
+
+function renderOA(containerId){
+  var container=document.getElementById(containerId);
+  if(!container)return;
+  container.innerHTML="";
+  var PACOTE_NSS1=1000;
+
+  // Resolver mês
+  var oa_keys=OA&&!OA.nucleos?Object.keys(OA):[];
+  var idx=oaState.mesIdx!==null?oaState.mesIdx:oa_keys.length-1;
+  if(idx<0)idx=0;
+  var oa_mes=null;
+  if(OA&&OA.nucleos){oa_mes=OA;}
+  else if(oa_keys.length>0){oa_mes=OA[oa_keys[idx]];}
+  var mes_label=oa_mes?oa_mes.label:"";
+
+  // Seletor de mês
+  var mesWrap=mk("div");mesWrap.style.cssText="display:flex;align-items:center;gap:10px;margin-bottom:14px";
+  var mesLbl=mk("label");mesLbl.textContent="Mês de referência:";
+  mesLbl.style.cssText="font-size:.75rem;font-weight:600;color:var(--tm);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap";
+  var mesCombo=mk("select");
+  mesCombo.style.cssText="padding:6px 12px;border-radius:8px;border:1.5px solid var(--bd);font-family:inherit;font-size:.84rem;background:var(--sf);color:var(--tx);cursor:pointer;min-width:160px";
+  if(OA&&OA.nucleos){
+    var opt=document.createElement("option");opt.value=0;opt.textContent=OA.label||"Único";opt.selected=true;mesCombo.appendChild(opt);
+  } else {
+    oa_keys.forEach(function(k,ki){
+      var opt=document.createElement("option");opt.value=ki;opt.textContent=k;
+      if(ki===idx)opt.selected=true;
+      mesCombo.appendChild(opt);
+    });
+  }
+  mesCombo.onchange=function(){oaState.mesIdx=parseInt(mesCombo.value);renderOA(containerId);};
+  mesWrap.appendChild(mesLbl);mesWrap.appendChild(mesCombo);
+  container.appendChild(mesWrap);
+
+  // Card resumo
+  var resumo=mk("div");resumo.style.cssText="background:var(--sf);border-radius:var(--rd);padding:14px 18px;margin-bottom:16px;border:1.5px solid var(--bd);box-shadow:var(--sh)";
+  var rtit=mk("div");rtit.style.cssText="font-size:.72rem;font-weight:700;color:var(--tm);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px";
+  rtit.textContent="Op. Assistida — "+mes_label;
+  resumo.appendChild(rtit);
+
+  // Chips por núcleo + Total
+  var rgrid=mk("div");rgrid.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px";
+  var total_geral_oa=0;
+  ["NSS1","NSS2","NSS3","NC"].forEach(function(nk){
+    var d=oa_mes&&oa_mes.nucleos?oa_mes.nucleos[nk]:null;
+    var tot=d?d.total:0;total_geral_oa+=tot;
+    var chip=mk("div");chip.style.cssText="background:var(--ap);border-radius:8px;padding:8px 14px;min-width:90px;text-align:center;border:2px solid transparent";
+    var cn=mk("div");cn.style.cssText="font-size:.63rem;font-weight:700;color:var(--ae);text-transform:uppercase;margin-bottom:2px";cn.textContent=nk;
+    var cv=mk("div");cv.style.cssText="font-family:'DM Mono',monospace;font-size:.95rem;font-weight:700;color:var(--tx)";cv.textContent=fmtH(tot);
+    chip.appendChild(cn);chip.appendChild(cv);rgrid.appendChild(chip);
+  });
+  var sep_chip=mk("div");sep_chip.style.cssText="align-self:center;width:1.5px;height:36px;background:var(--bd);border-radius:2px;margin:0 2px";
+  rgrid.appendChild(sep_chip);
+  var chip_total=mk("div");chip_total.style.cssText="background:var(--ae);border-radius:8px;padding:8px 14px;min-width:90px;text-align:center;border:2px solid var(--ae)";
+  var cn_t=mk("div");cn_t.style.cssText="font-size:.63rem;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;margin-bottom:2px";cn_t.textContent="Total";
+  var cv_t=mk("div");cv_t.style.cssText="font-family:'DM Mono',monospace;font-size:.95rem;font-weight:700;color:#fff";cv_t.textContent=fmtH(total_geral_oa);
+  chip_total.appendChild(cn_t);chip_total.appendChild(cv_t);rgrid.appendChild(chip_total);
+  resumo.appendChild(rgrid);
+
+  // Barra NSS1
+  var nss1_tot=oa_mes&&oa_mes.nucleos&&oa_mes.nucleos["NSS1"]?oa_mes.nucleos["NSS1"].total:0;
+  var pct=Math.round(nss1_tot/PACOTE_NSS1*100);
+  var fill_color=pct>=100?"#C00000":pct>=80?"#F39C12":"#27AE60";
+  var pwrap=mk("div");pwrap.style.cssText="background:var(--ab);border-radius:8px;padding:10px 14px";
+  var plbl=mk("div");plbl.style.cssText="font-size:.7rem;font-weight:600;color:var(--tm);margin-bottom:6px";plbl.textContent="NSS1 — Pacote OA contrato SMS 107 ("+PACOTE_NSS1+"h/mês)";
+  var bar_bg=mk("div");bar_bg.style.cssText="background:#e8edf3;border-radius:20px;height:12px;overflow:hidden;margin-bottom:5px";
+  var bar_fill=mk("div");bar_fill.style.cssText="height:12px;border-radius:20px;background:"+fill_color+";width:"+Math.min(pct,100)+"%";
+  bar_bg.appendChild(bar_fill);
+  var pnums=mk("div");pnums.style.cssText="display:flex;justify-content:space-between;font-size:.74rem;font-family:'DM Mono',monospace";
+  var pL=mk("span");pL.style.color="var(--tm)";pL.textContent="Lançado: "+fmtH(nss1_tot)+" / "+PACOTE_NSS1+"h";
+  var pRt=mk("span");pRt.style.cssText="font-weight:700;color:"+fill_color;pRt.textContent=pct+"%"+(pct>=100?" ⚠ acima do pacote":"");
+  pnums.appendChild(pL);pnums.appendChild(pRt);
+  pwrap.appendChild(plbl);pwrap.appendChild(bar_bg);pwrap.appendChild(pnums);
+  resumo.appendChild(pwrap);
+  container.appendChild(resumo);
+
+  // Busca + Expandir/Recolher
+  var tb=mk("div","tbar");
+  var si=mk("input");si.className="sinp";si.type="text";si.placeholder="Buscar colaborador...";
+  si.oninput=function(){var q=si.value.toLowerCase().trim();container.querySelectorAll(".oa-card").forEach(function(el){el.classList.toggle("hs",q&&!el.dataset.nome.includes(q));});};
+  var bE=mk("button","xbtn","Expandir");var bR=mk("button","xbtn","Recolher");
+  bE.onclick=function(){container.querySelectorAll(".oa-card,.oa-gdp-block").forEach(function(el){el.classList.add("op");});};
+  bR.onclick=function(){container.querySelectorAll(".oa-card,.oa-gdp-block").forEach(function(el){el.classList.remove("op");});};
+  tb.appendChild(si);tb.appendChild(bE);tb.appendChild(bR);container.appendChild(tb);
+
+  // Lançamentos agrupados por núcleo
+  ["NSS1","NSS2","NSS3","NC"].forEach(function(nk){
+    var dados=oa_mes&&oa_mes.nucleos?oa_mes.nucleos[nk]:null;
+    if(!dados||!dados.colaboradores)return;
+    var cols=dados.colaboradores.filter(function(c){return c.horas>0;});
+    if(cols.length===0)return;
+    var sep=mk("div");sep.style.cssText="background:var(--ae);color:#fff;font-size:.78rem;font-weight:700;letter-spacing:.8px;text-transform:uppercase;padding:8px 16px;border-radius:8px;margin:16px 0 10px;display:flex;align-items:center;gap:8px";
+    sep.appendChild(mk("span","",nk+" — Op. Assistida"));
+    var stot=mk("span");stot.style.cssText="margin-left:auto;font-family:'DM Mono',monospace;font-size:.9rem";stot.textContent=fmtH(dados.total);
+    sep.appendChild(stot);container.appendChild(sep);
+    cols.forEach(function(c){
+      var cid="oa"+uid();var card=mk("div","oa-card");card.id=cid;card.dataset.nome=c.nome.toLowerCase();
+      var h=mk("div","oa-hdr");h.onclick=function(){tog(cid);};
+      h.appendChild(mk("div","oa-av",ini(c.nome)));
+      h.appendChild(mk("span","oa-nome",c.nome));
+      h.appendChild(mk("span","oa-espec",c.espec||""));
+      h.appendChild(mk("span","oa-horas",fmtH(c.horas)));
+      h.appendChild(mk("span","oa-chv","▼"));
+      var b=mk("div","oa-body");
+      if(c.projetos&&c.projetos.length>0){
+        c.projetos.forEach(function(proj){
+          b.appendChild(mk("div","oa-proj-sep","[Proj] "+proj.nome+" — "+fmtH(proj.horas)));
+          proj.gdps.forEach(function(gdp){
+            var gid="oag"+uid();var gb=mk("div","oa-gdp-block");gb.id=gid;
+            var gh=mk("div","oa-gdp-hdr");gh.onclick=function(){tog(gid);};
+            gh.appendChild(mk("span","oa-gdp-label","GDP:"+gdp.gdp+" / "+gdp.cliente));
+            gh.appendChild(mk("span","oa-gdp-h",fmtH(gdp.horas)));
+            gh.appendChild(mk("span","oa-gdp-chv","▼"));
+            var gbd=mk("div","oa-gdp-body");
+            gdp.atividades.forEach(function(a){
+              var r=mk("div","oa-atv-row");
+              r.appendChild(mk("span","oa-atv-id","["+a.id+"]"));
+              r.appendChild(mk("span","oa-atv-titulo",a.titulo));
+              r.appendChild(mk("span","oa-atv-data",a.data));
+              r.appendChild(mk("span","oa-atv-h",fmtH(a.horas)));
+              gbd.appendChild(r);
+            });
+            gb.appendChild(gh);gb.appendChild(gbd);b.appendChild(gb);
+          });
+        });
+      } else {b.appendChild(mk("div","sl","Sem detalhes disponíveis."));}
+      card.appendChild(h);card.appendChild(b);container.appendChild(card);
+    });
+  });
+}
+
+// Compatibilidade: bViewOA não mais usada diretamente
 function bViewOA(nucleo_key, nid){
   var frag=document.createDocumentFragment();
   var PACOTE_NSS1=1000;
@@ -942,13 +1077,17 @@ NUCLEOS.forEach(function(n,ni){
   // Wrap para resultado
   var cruzWrap=mk("div");cruzWrap.id="cruzWrap_"+n.nome;vc.appendChild(cruzWrap);
   np.appendChild(vc);
-  // View 3: Op. Assistida
+  // View 3: Op. Assistida (independente de núcleo — compartilhado)
   var voa=mk("div","view-panel");
-  voa.appendChild(bViewOA(n.lkey,nid));np.appendChild(voa);
+  var oaContainer=mk("div");oaContainer.id="oaPanel";voa.appendChild(oaContainer);
+  (function(){var vt3=vbar.children[3];if(vt3){var orig=vt3.onclick;vt3.onclick=function(){if(orig)orig.call(this);renderOA("oaPanel");};}})();
+  np.appendChild(voa);
   panel.appendChild(np);
 });
 MN.appendChild(panel);
 cruzState.nucleo=NUCLEOS[0].nome;initCruz();
+// Inicializar OA: apontar para o último mês disponível
+if(OA&&!OA.nucleos){var _oaK=Object.keys(OA);oaState.mesIdx=_oaK.length>0?_oaK.length-1:0;}else{oaState.mesIdx=0;}
 
 function abrirDrw(colab_rf, nucleo_key, mes_indices){
   var drw=document.getElementById("drw");
