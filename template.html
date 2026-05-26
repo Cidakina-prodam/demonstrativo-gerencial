@@ -733,50 +733,62 @@ function swN(mid,ni){document.querySelectorAll("#"+mid+" .np").forEach(function(
 
 // ── OPERAÇÃO ASSISTIDA ─────────────────────────────────────────────────────
 // Estado global do mês OA (independente de núcleo)
-var oaState={mesIdx:null};
+var oaState={periodos:null};
 
 function renderOA(containerId){
   var container=document.getElementById(containerId);
   if(!container)return;
   container.innerHTML="";
-  var PACOTE_NSS1=1000;
 
-  // Resolver períodos selecionados — consolida múltiplos meses
-  var oa_keys=OA&&!OA.nucleos?Object.keys(OA):[];
+  // ── Descobrir estrutura do OA ─────────────────────────────────────────
+  // OA pode ser: {} (vazio), {label,nucleos} (mês único), {"Jan":{label,nucleos},...} (histórico)
+  var oa_keys=[];
+  if(OA&&OA.nucleos){
+    // estrutura legada mês único
+    oa_keys=["único"];
+  } else if(OA&&typeof OA==="object"){
+    oa_keys=Object.keys(OA);
+  }
+
+  // Sincronizar periodos com as chaves atuais
   if(!oaState.periodos||oaState.periodos.length!==oa_keys.length){
     oaState.periodos=oa_keys.map(function(){return true;});
   }
-  // Consolidar núcleos de todos os meses selecionados
+
+  // ── Montar oa_mes consolidado ─────────────────────────────────────────
+  var sel=oa_keys.filter(function(k,ki){return oaState.periodos[ki];});
   var oa_mes=null;
-  var sel_meses=oa_keys.filter(function(k,ki){return oaState.periodos[ki];});
   if(OA&&OA.nucleos){
     oa_mes=OA;
-  } else if(sel_meses.length===1){
-    oa_mes=OA[sel_meses[0]];
-  } else if(sel_meses.length>1){
-    // Consolidar: somar totais de cada núcleo
+  } else if(sel.length===1){
+    oa_mes=OA[sel[0]];
+  } else if(sel.length>1){
     var nucleos_cons={};
     ["NSS1","NSS2","NSS3","NC"].forEach(function(nk){
-      var total=0;var colaboradores=[];
-      sel_meses.forEach(function(k){
+      var total=0; var colabs=[];
+      sel.forEach(function(k){
         var m=OA[k];if(!m||!m.nucleos||!m.nucleos[nk])return;
         total+=m.nucleos[nk].total||0;
-        // Para colaboradores, pegar do mês mais recente apenas
       });
-      // Colaboradores do último mês selecionado
-      var ultimo=OA[sel_meses[sel_meses.length-1]];
-      if(ultimo&&ultimo.nucleos&&ultimo.nucleos[nk])colaboradores=ultimo.nucleos[nk].colaboradores||[];
-      nucleos_cons[nk]={total:Math.round(total*100)/100,colaboradores:colaboradores};
+      // Colaboradores: mostrar do mês mais recente selecionado
+      for(var si=sel.length-1;si>=0;si--){
+        var mm=OA[sel[si]];
+        if(mm&&mm.nucleos&&mm.nucleos[nk]&&mm.nucleos[nk].colaboradores.length>0){
+          colabs=mm.nucleos[nk].colaboradores; break;
+        }
+      }
+      nucleos_cons[nk]={total:Math.round(total*100)/100,colaboradores:colabs};
     });
-    oa_mes={label:sel_meses[0]+" – "+sel_meses[sel_meses.length-1],nucleos:nucleos_cons};
+    oa_mes={label:sel[0]+" – "+sel[sel.length-1],nucleos:nucleos_cons};
   }
   var mes_label=oa_mes?oa_mes.label:"";
 
-  // Período de referência — checklist igual ao Desempenho de Faturamento
+  // ── Checklist de período ──────────────────────────────────────────────
   var pSel=mk("div","cruz-sel");pSel.appendChild(mk("label","","Período de referência"));
   var pList=mk("div","period-checklist");
   var allItem=mk("div","period-item");
-  var allCk=document.createElement("input");allCk.type="checkbox";allCk.checked=true;
+  var allCk=document.createElement("input");allCk.type="checkbox";
+  allCk.checked=oaState.periodos.every(function(v){return v;});
   allCk.onchange=function(){
     container.querySelectorAll(".oa-period-ck").forEach(function(c){c.checked=allCk.checked;});
     oaState.periodos=oa_keys.map(function(){return allCk.checked;});
@@ -784,19 +796,19 @@ function renderOA(containerId){
   };
   allItem.appendChild(allCk);allItem.appendChild(mk("span",null,"Selecionar todos"));
   pList.appendChild(allItem);
-  var div=document.createElement("hr");div.className="period-divider";pList.appendChild(div);
+  var divhr=document.createElement("hr");divhr.className="period-divider";pList.appendChild(divhr);
   oa_keys.forEach(function(k,ki){
     var item=mk("div","period-item");
     var ck=document.createElement("input");ck.type="checkbox";ck.className="oa-period-ck";
-    ck.checked=oaState.periodos?oaState.periodos[ki]:true;ck.dataset.idx=ki;
+    ck.checked=!!oaState.periodos[ki];ck.dataset.ki=ki;
     ck.onchange=function(){
-      var cks=container.querySelectorAll(".oa-period-ck");
-      oaState.periodos=Array.from(cks).map(function(c){return c.checked;});
-      var allOn=Array.from(cks).every(function(c){return c.checked;});
-      allCk.checked=allOn;
+      var cks=Array.from(container.querySelectorAll(".oa-period-ck"));
+      cks.forEach(function(c){oaState.periodos[parseInt(c.dataset.ki)]=c.checked;});
+      allCk.checked=cks.every(function(c){return c.checked;});
       renderOA(containerId);
     };
-    item.appendChild(ck);item.appendChild(mk("span",null,k+(OA[k]&&OA[k].tem_posicional===false?" ⚠":"")));
+    var label_k = (OA[k]&&OA[k].nucleos)?OA[k].label||k : k;
+    item.appendChild(ck);item.appendChild(mk("span",null,label_k));
     pList.appendChild(item);
   });
   pSel.appendChild(pList);
@@ -1119,7 +1131,7 @@ NUCLEOS.forEach(function(n,ni){
 MN.appendChild(panel);
 cruzState.nucleo=NUCLEOS[0].nome;initCruz();
 // Inicializar OA: apontar para o último mês disponível
-if(OA&&!OA.nucleos){var _oaK=Object.keys(OA);oaState.mesIdx=_oaK.length>0?_oaK.length-1:0;}else{oaState.mesIdx=0;}
+// oaState.periodos é inicializado automaticamente no primeiro renderOA
 
 function abrirDrw(colab_rf, nucleo_key, mes_indices){
   var drw=document.getElementById("drw");
