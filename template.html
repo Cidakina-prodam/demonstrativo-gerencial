@@ -740,14 +740,24 @@ function bViewOA(nucleo_key, nid){
 
   // Chips por núcleo
   var rgrid=mk("div");rgrid.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px";
+  var total_geral_oa=0;
   ["NSS1","NSS2","NSS3","NC"].forEach(function(nk){
     var d=oa_mes&&oa_mes.nucleos?oa_mes.nucleos[nk]:null;
     var tot=d?d.total:0;
+    total_geral_oa+=tot;
     var chip=mk("div");chip.style.cssText="background:var(--ap);border-radius:8px;padding:8px 14px;min-width:90px;text-align:center;"+(nk===nucleo_key?"border:2px solid var(--ae)":"border:2px solid transparent");
     var cn=mk("div");cn.style.cssText="font-size:.63rem;font-weight:700;color:var(--ae);text-transform:uppercase;margin-bottom:2px";cn.textContent=nk;
     var cv=mk("div");cv.style.cssText="font-family:'DM Mono',monospace;font-size:.95rem;font-weight:700;color:var(--tx)";cv.textContent=fmtH(tot);
     chip.appendChild(cn);chip.appendChild(cv);rgrid.appendChild(chip);
   });
+  // Chip separador visual
+  var sep_chip=mk("div");sep_chip.style.cssText="align-self:center;width:1.5px;height:36px;background:var(--bd);border-radius:2px;margin:0 2px";
+  rgrid.appendChild(sep_chip);
+  // Chip Total Geral
+  var chip_total=mk("div");chip_total.style.cssText="background:var(--ae);border-radius:8px;padding:8px 14px;min-width:90px;text-align:center;border:2px solid var(--ae)";
+  var cn_total=mk("div");cn_total.style.cssText="font-size:.63rem;font-weight:700;color:rgba(255,255,255,.8);text-transform:uppercase;margin-bottom:2px";cn_total.textContent="Total";
+  var cv_total=mk("div");cv_total.style.cssText="font-family:'DM Mono',monospace;font-size:.95rem;font-weight:700;color:#fff";cv_total.textContent=fmtH(total_geral_oa);
+  chip_total.appendChild(cn_total);chip_total.appendChild(cv_total);rgrid.appendChild(chip_total);
   resumo.appendChild(rgrid);
 
   // Barra de progresso NSS1 vs pacote 1000h
