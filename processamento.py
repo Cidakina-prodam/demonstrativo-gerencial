@@ -139,15 +139,16 @@ def processar_posicional(
     periodo_fim: pd.Timestamp,
     status_map: dict,
 ) -> dict:
+    # Período filtrado — usado apenas para aba Lançamentos/Desempenho
     periodo = lanc_df[
         (lanc_df["data_dt"] >= periodo_ini) &
         (lanc_df["data_dt"] <= periodo_fim)
     ]
 
-    atividades_no_periodo = set(periodo["atividade"].dropna().unique())
-
+    # Para cruzamento Posicional × CSV: busca no CSV INTEIRO
+    # (demandas antigas podem ser faturadas meses depois — comportamento esperado)
     mapa_lanc = defaultdict(list)
-    for _, row in periodo.iterrows():
+    for _, row in lanc_df.iterrows():
         atv = row["atividade"]
         if not atv:
             continue
@@ -158,6 +159,20 @@ def processar_posicional(
             "horas": row["horas_num"],
             "desc":  san(str(row.get("titulo_atividade", "") or "")),
         })
+
+    # Mapa GDP → lançamentos (CSV inteiro) para demandas sem atividades listadas
+    mapa_gdp = defaultdict(list)
+    for _, row in lanc_df.iterrows():
+        gdp_val = row["gdp_csv"]
+        if gdp_val and gdp_val != "n/d":
+            mapa_gdp[gdp_val].append({
+                "rf":    row["rf"],
+                "nome":  san(str(row.get("nome", row["rf"]))).title(),
+                "data":  row["data"],
+                "horas": row["horas_num"],
+                "desc":  san(str(row.get("titulo_atividade", "") or "")),
+                "atv":   row["atividade"],
+            })
 
     resultado = {"secretarias": []}
 
@@ -210,24 +225,21 @@ def processar_posicional(
                                     "gdp":       gdp,
                                 })
                     else:
-                        # ── Sem atividades listadas: cruzar pelo GDS/GDP no CSV
-                        mask = pd.Series([False] * len(periodo), index=periodo.index)
-                        if gds:
-                            mask = mask | (periodo["gds_csv"] == gds)
-                        if gdp and gdp != gds:
-                            mask = mask | (periodo["gdp_csv"] == gdp)
-                        lancs_gdp = periodo[mask]
-                        if lancs_gdp.empty and gds:
+                        # ── Sem atividades: cruzar pelo GDP no CSV inteiro
+                        lancs_gdp = mapa_gdp.get(gdp, [])
+                        if not lancs_gdp and gds and gds != gdp:
+                            lancs_gdp = mapa_gdp.get(gds, [])
+                        if not lancs_gdp:
                             faltando.append(f"GDP:{gdp}/GDS:{gds}")
-                        for _, row in lancs_gdp.iterrows():
-                            rf = row["rf"]
-                            colaboradores[rf]["nome"] = san(str(row.get("nome", rf))).title()
+                        for l in lancs_gdp:
+                            rf = l["rf"]
+                            colaboradores[rf]["nome"] = l["nome"]
                             colaboradores[rf]["rf"]   = rf
                             colaboradores[rf]["lancamentos"].append({
-                                "atividade": row["atividade"],
-                                "desc":      san(str(row.get("titulo_atividade", ""))),
-                                "data":      row["data"],
-                                "horas":     row["horas_num"],
+                                "atividade": l["atv"],
+                                "desc":      l["desc"],
+                                "data":      l["data"],
+                                "horas":     l["horas"],
                                 "gds":       gds,
                                 "gdp":       gdp,
                             })
