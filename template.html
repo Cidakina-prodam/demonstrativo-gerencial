@@ -731,8 +731,9 @@ function swView(nid,vi){
   var hideCombo=(vi===2||vi===3);
   var nb=document.getElementById("mainNbar");
   if(nb)nb.style.display=vi===3?"none":"";
-  var mw=document.getElementById("mainMesWrap");
-  if(mw)mw.style.display=hideCombo?"none":"";
+  document.querySelectorAll(".mainMesWrap").forEach(function(mw){
+    mw.style.display=hideCombo?"none":"";
+  });
   if(vi===2){renderCruz();}
   if(vi===3){renderOA("oaPanel");}
 }
@@ -1055,7 +1056,7 @@ NUCLEOS.forEach(function(n,ni){
 
   // Combo de mês
   var mesWrap=mk("div");
-  mesWrap.id="mainMesWrap";
+  mesWrap.className="mainMesWrap";
   mesWrap.style.cssText="display:flex;align-items:center;gap:10px;margin-bottom:12px";
   var mesLbl=mk("label");mesLbl.textContent="M\u00EAs de refer\u00EAncia:";
   mesLbl.style.cssText="font-size:.75rem;font-weight:600;color:var(--tm);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap";
