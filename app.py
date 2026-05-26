@@ -65,10 +65,14 @@ def extrair_dados_html(html_file) -> dict:
 # ── MAPEAMENTO CLIENTE+CONTRATO → NÚCLEO ──────────────────────────────────────
 # Regras avaliadas em ordem; a primeira que bater vence.
 REGRAS_NUCLEO = [
-    # NSS2 — dois contratos HSPM distintos
+    # NSS2 — dois contratos HSPM distintos (várias grafias)
     ("HSPM", "TC 094",  "NSS2"),
-    ("HSPM", "TC273",   "NSS2"),
+    ("HSPM", "TC094",   "NSS2"),
+    ("HSPM", "TC-094",  "NSS2"),
     ("HSPM", "TC 273",  "NSS2"),
+    ("HSPM", "TC273",   "NSS2"),
+    ("HSPM", "TC-273",  "NSS2"),
+    ("HSPM", "",        "NSS2"),  # fallback: qualquer PDF com HSPM é NSS2
     # NSS1
     ("SMS",  "",        "NSS1"),
     # NSS3
@@ -419,10 +423,16 @@ with st.spinner("Gerando HTML..."):
                             "data":  ar["data_dt"].strftime("%d/%m") if pd.notna(ar["data_dt"]) else "",
                             "horas": round(ar["horas_num"], 2),
                         })
+                    # Descrição da demanda/GDP: pegar do titulo_atividade mais comum ou nome_projeto
+                    _desc_gdp = ""
+                    if "titulo_atividade" in lgds.columns:
+                        # Filtrar linhas que contêm "assistida" no tipo para pegar a descrição real
+                        _desc_gdp = san(lgds["titulo_atividade"].iloc[0]) if not lgds.empty else ""
                     gdps.append({
                         "gdp":        san(lgds["gdp_csv"].iloc[0]),
                         "gds":        san(str(gds_v)),
                         "cliente":    san(lgds["cliente"].iloc[0]),
+                        "desc":       _desc_gdp,
                         "horas":      round(lgds["horas_num"].sum(), 2),
                         "atividades": ativs,
                     })
