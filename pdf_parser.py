@@ -1,19 +1,15 @@
 """
 pdf_parser.py
 Extrai a estrutura do posicional diretamente de PDFs.
-Requer: pdfplumber
+Suporta PDFs com texto embutido e PDFs baseados em imagem (via OCR automático).
+Requer: pdfplumber; pytesseract + pdf2image para PDFs-imagem.
 """
 
 import re
 import pdfplumber
 
 
-def parse_posicional_pdf(pdf_file) -> dict:
-    """
-    Extrai estrutura do posicional de um arquivo PDF.
-    pdf_file: path (str) ou file-like object
-    Retorna dict com cliente, contrato, periodo, secretarias/oss/projetos/demandas/atividades
-    """
+def _extrair_linhas_pdf(pdf_file) -> list:
     with pdfplumber.open(pdf_file) as pdf:
         linhas = []
         for page in pdf.pages:
@@ -23,6 +19,65 @@ def parse_posicional_pdf(pdf_file) -> dict:
                     l = linha.strip()
                     if l:
                         linhas.append(l)
+
+    linhas_uteis = [l for l in linhas if len(l) > 5]
+    if len(linhas_uteis) <= 3:
+        try:
+            from pdf2image import convert_from_bytes, convert_from_path
+            import pytesseract
+
+            if hasattr(pdf_file, 'read'):
+                data = pdf_file.read()
+                if hasattr(pdf_file, 'seek'):
+                    pdf_file.seek(0)
+                pages = convert_from_bytes(data, dpi=200)
+            else:
+                pages = convert_from_path(pdf_file, dpi=200)
+
+            linhas = []
+            for page in pages:
+                texto = pytesseract.image_to_string(page, lang='por')
+                for linha in texto.split("\n"):
+                    l = linha.strip()
+                    if l:
+                        linhas.append(l)
+        except Exception:
+            pass
+
+    return linhas
+
+
+# ── Padrões globais ──────────────────────────────────────────────────────────
+RE_OS       = re.compile(r'^O\.S\.\s+(.+)$', re.IGNORECASE)
+RE_OS_SEM   = re.compile(r'^Sem O\.[sS]\.$')
+RE_TOTAL_H  = re.compile(r'^Total Horas:?\s*([\d.,]*)$')
+RE_PROJ     = re.compile(r'^(SH\d+|SS\d+|PS\d+|SJ\d+|SV\d+|SB\d+|SU\d+|HM\d+)\s+(.+?)\s+([\d.,]+)$')
+RE_PROJ_COD = re.compile(r'^(SH\d+|SS\d+|PS\d+|SJ\d+|SV\d+|SB\d+|SU\d+|HM\d+)$')
+RE_PROJ_NH  = re.compile(r'^(.+?)\s+([\d]+[.,][\d]+)$')
+RE_DEM      = re.compile(r'^(\d{6})\s*-\s*(.+?)\s+(\d{5,6})\s+([\d.,]+)$')
+RE_ATIV     = re.compile(r'^(\d{6})\s+.+')
+RE_NUM      = re.compile(r'^([\d]+[.,][\d]+)$')
+RE_SKIP     = re.compile(
+    r'^\d+/\d+/\d+.*\d+/\d+$'
+    r'|^Total\s+[\d.,]+'
+    r'|^Total$'
+    r'|^Qtdes\.|^Otdes\.'
+    r'|^dez/|^jan/|^fev/|^mar/|^abr/|^mai/|^jun/'
+    r'|^jul/|^ago/|^set/|^out/|^nov/'
+    r'|^Código\s+Projeto|^Código$'
+    r'|^Projeto\s+Demanda'
+    r'|^RELATÓRIO'
+    r'|^Cliente:|^Contrato:|^Ordem|^Data Iníc|^Data Fim'
+    r'|^Tipo Serv|^Período|^De:'
+    r'|^prodam|^prociam'
+    r'|^\d+/\d+/\d{4}\s+\d+:\d+'  # timestamp
+    r'|^\d+$'                        # zeros soltos da tabela Qtdes
+    r'|^\d+/\d+$'                    # página "1/3"
+)
+
+
+def parse_posicional_pdf(pdf_file) -> dict:
+    linhas = _extrair_linhas_pdf(pdf_file)
 
     # ── Cabeçalho ────────────────────────────────────────────────────────────
     cliente = contrato = periodo_ref = data_ini = data_fim = ""
@@ -39,40 +94,28 @@ def parse_posicional_pdf(pdf_file) -> dict:
             data_ini, data_fim = m.group(1), m.group(2)
 
     resultado = {
-        "cliente":     cliente,
-        "contrato":    contrato,
-        "periodo_ref": periodo_ref,
-        "data_ini":    data_ini,
-        "data_fim":    data_fim,
-        "secretarias": [{
-            "desc":  f"{cliente} — {contrato}",
-            "horas": 0,
-            "oss":   [],
-        }],
+        "cliente": cliente, "contrato": contrato,
+        "periodo_ref": periodo_ref, "data_ini": data_ini, "data_fim": data_fim,
+        "secretarias": [{"desc": f"{cliente} — {contrato}", "horas": 0, "oss": []}],
     }
     sec = resultado["secretarias"][0]
     os_cur = proj_cur = dem_cur = None
 
-    # ── Padrões ───────────────────────────────────────────────────────────────
-    RE_OS      = re.compile(r'^O\.S\.\s+(.+)$')
-    RE_TOTAL_H = re.compile(r'^Total Horas:\s*([\d.,]+)$')
-    # SH, SS, PS, SJ, SV = NSS1/NSS2/NSS3 | SB, SU = NC (SMADS, SMC, SMDHC, SMPED, SPCINE, FTM)
-    RE_PROJ    = re.compile(r'^(SH\d+|SS\d+|PS\d+|SJ\d+|SV\d+|SB\d+|SU\d+|HM\d+)\s+(.+?)\s+([\d.,]+)$')
-    RE_DEM     = re.compile(r'^(\d{6})\s*-\s*(.+?)\s+(\d{5,6})\s+([\d.,]+)$')
-    RE_ATIV    = re.compile(r'^(\d{6})\s+.+')
-    RE_SKIP    = re.compile(
-        r'^\d+/\d+/\d+.*\d+/\d+$'
-        r'|^Total\s+[\d.,]+'
-        r'|^Qtdes\.'
-        r'|^dez/|^jan/|^fev/|^mar/|^abr/|^mai/|^jun/'
-        r'|^jul/|^ago/|^set/|^out/|^nov/'
-        r'|^Código\s+Projeto'
-        r'|^RELATÓRIO'
-        r'|^Cliente:|^Contrato:|^Ordem|^Data Iníc|^Data Fim'
-        r'|^Tipo Serv|^Período|^De:'
-    )
+    # Pré-processar: coletar códigos de projeto que aparecem sozinhos ANTES da OS
+    # (OCR do cabeçalho da tabela mistura código HM com header)
+    # Eles serão usados em ordem quando um projeto sem código aparecer
+    codigos_pre = []
+    for l in linhas:
+        if RE_OS.match(l) or RE_OS_SEM.match(l):
+            break
+        if RE_PROJ_COD.match(l):
+            codigos_pre.append(RE_PROJ_COD.match(l).group(1))
 
-    # ── Parse linha a linha ───────────────────────────────────────────────────
+    fila_codigos = list(codigos_pre)  # consumidos na ordem quando proj sem código aparece
+
+    aguardando_total    = False
+    aguardando_proj_nome = None
+
     i = 0
     while i < len(linhas):
         linha = linhas[i]
@@ -81,35 +124,104 @@ def parse_posicional_pdf(pdf_file) -> dict:
             i += 1
             continue
 
-        # OS
-        m = RE_OS.match(linha)
-        if m:
-            os_cur   = {"desc": m.group(1).strip(), "horas": 0, "projetos": []}
+        # "Sem O.s." linha separada
+        if RE_OS_SEM.match(linha):
+            os_cur = {"desc": "Sem O.S.", "horas": 0, "projetos": []}
             proj_cur = dem_cur = None
             sec["oss"].append(os_cur)
+            aguardando_total = False
+            # Próxima linha pode ser o total
+            if i+1 < len(linhas):
+                prox = linhas[i+1]
+                m2 = RE_NUM.match(prox)
+                if m2:
+                    os_cur["horas"] = float(m2.group(1).replace(",", "."))
+                    i += 2
+                    continue
+            i += 1
+            continue
+
+        # OS normal
+        m = RE_OS.match(linha)
+        if m:
+            os_cur = {"desc": m.group(1).strip(), "horas": 0, "projetos": []}
+            proj_cur = dem_cur = None
+            sec["oss"].append(os_cur)
+            aguardando_total = False
             i += 1
             continue
 
         # Total Horas
         m = RE_TOTAL_H.match(linha)
         if m and os_cur:
-            os_cur["horas"] = float(m.group(1).replace(",", "."))
+            val = m.group(1).strip()
+            if val:
+                os_cur["horas"] = float(val.replace(",", "."))
+                aguardando_total = False
+            else:
+                aguardando_total = True
             i += 1
             continue
 
-        # Projeto
+        # Número solto após "Total Horas:" vazio
+        if aguardando_total and os_cur:
+            m2 = RE_NUM.match(linha)
+            if m2:
+                os_cur["horas"] = float(m2.group(1).replace(",", "."))
+                aguardando_total = False
+                i += 1
+                continue
+            aguardando_total = False
+
+        # Projeto completo: código + nome + horas
         m = RE_PROJ.match(linha)
         if m and os_cur:
             proj_cur = {
-                "cod":      m.group(1),
-                "nome":     m.group(2).strip(),
-                "horas":    float(m.group(3).replace(",", ".")),
-                "demandas": [],
+                "cod": m.group(1), "nome": m.group(2).strip(),
+                "horas": float(m.group(3).replace(",", ".")), "demandas": [],
             }
             os_cur["projetos"].append(proj_cur)
             dem_cur = None
+            aguardando_proj_nome = None
             i += 1
             continue
+
+        # Código isolado no corpo (após OS) — aguarda nome na próxima linha
+        m = RE_PROJ_COD.match(linha)
+        if m and os_cur:
+            aguardando_proj_nome = m.group(1)
+            i += 1
+            continue
+
+        # Nome+horas do projeto quando código veio separado
+        if aguardando_proj_nome and os_cur:
+            m2 = RE_PROJ_NH.match(linha)
+            if m2:
+                proj_cur = {
+                    "cod": aguardando_proj_nome, "nome": m2.group(1).strip(),
+                    "horas": float(m2.group(2).replace(",", ".")), "demandas": [],
+                }
+                os_cur["projetos"].append(proj_cur)
+                dem_cur = None
+                aguardando_proj_nome = None
+                i += 1
+                continue
+            aguardando_proj_nome = None
+
+        # Projeto OCR sem código na linha (ex: "SISTEMA SGH 689.55")
+        # Usa código da fila pré-coletada
+        if os_cur and not proj_cur and fila_codigos:
+            m2 = RE_PROJ_NH.match(linha)
+            if m2 and not RE_DEM.match(linha) and not RE_ATIV.match(linha):
+                cod = fila_codigos.pop(0)
+                proj_cur = {
+                    "cod": cod, "nome": m2.group(1).strip(),
+                    "horas": float(m2.group(2).replace(",", ".")), "demandas": [],
+                }
+                os_cur["projetos"].append(proj_cur)
+                dem_cur = None
+                i += 1
+                continue
 
         # Demanda
         m = RE_DEM.match(linha)
@@ -119,7 +231,8 @@ def parse_posicional_pdf(pdf_file) -> dict:
             while j < len(linhas):
                 prox = linhas[j]
                 if (not RE_DEM.match(prox) and not RE_OS.match(prox) and
-                        not RE_PROJ.match(prox) and not RE_TOTAL_H.match(prox) and
+                        not RE_OS_SEM.match(prox) and not RE_PROJ.match(prox) and
+                        not RE_PROJ_COD.match(prox) and not RE_TOTAL_H.match(prox) and
                         not RE_ATIV.match(prox) and prox != "Atividades" and
                         not RE_SKIP.match(prox)):
                     titulo += " " + prox
@@ -127,10 +240,8 @@ def parse_posicional_pdf(pdf_file) -> dict:
                 else:
                     break
             dem_cur = {
-                "gdp":        m.group(1),
-                "gds":        m.group(3),
-                "titulo":     titulo,
-                "horas":      float(m.group(4).replace(",", ".")),
+                "gdp": m.group(1), "gds": m.group(3),
+                "titulo": titulo, "horas": float(m.group(4).replace(",", ".")),
                 "atividades": [],
             }
             proj_cur["demandas"].append(dem_cur)
@@ -151,8 +262,4 @@ def parse_posicional_pdf(pdf_file) -> dict:
 
 
 def estrutura_para_pos_format(parsed: dict) -> dict:
-    """
-    Converte o resultado do parser para o formato usado pelo processamento.py:
-    {"secretarias": [{desc, horas, oss: [{desc, projetos: [{cod, nome, demandas: [{gdp, gds, titulo, horas, atividades}]}]}]}]}
-    """
     return {"secretarias": parsed["secretarias"]}
