@@ -1088,7 +1088,7 @@ NUCLEOS.forEach(function(n,ni){
     if(mi===mesState.idx)opt.selected=true;
     mesCombo.appendChild(opt);
   });
-  (function(nii,nid2,pkey2){mesCombo.onchange=function(){
+  (function(nii,nid2,pkey2,lkey2){mesCombo.onchange=function(){
     mesState.idx=parseInt(mesCombo.value);
     // Re-renderizar o posicional com dados do novo mês
     var vps=np.querySelectorAll(".view-panel");
@@ -1096,13 +1096,18 @@ NUCLEOS.forEach(function(n,ni){
       vps[0].innerHTML="";
       vps[0].appendChild(bViewPos(pkey2,nid2));
     }
+    // Re-renderizar Lançamentos com dados do novo mês
+    if(vps[1]){
+      vps[1].innerHTML="";
+      vps[1].appendChild(bViewLanc(lkey2,nid2));
+    }
     // Atualizar visão ativa
     var activeView=np.querySelector(".view-panel.on");
     if(activeView){
       var vi=Array.from(np.querySelectorAll(".view-panel")).indexOf(activeView);
       swView(nid2,vi);
     }
-  };})(ni,nid,n.pkey);
+  };})(ni,nid,n.pkey,n.lkey);
   mesWrap.appendChild(mesLbl);mesWrap.appendChild(mesCombo);
   np.appendChild(mesWrap);
 
