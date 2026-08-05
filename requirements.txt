@@ -1,0 +1,8 @@
+streamlit
+starlette<1.4.0
+pdfplumber
+pandas
+openpyxl
+pdf2image
+pytesseract
+
